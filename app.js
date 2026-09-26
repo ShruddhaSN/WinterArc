@@ -53,13 +53,7 @@ function getAllGoals() {
 const TASK_INFO = [
   ["screen check", "Screenshot your phone's screen-time summary at the end of the day as proof — no judgment either way, just visibility."],
   ["catch-up", "Whatever workout got skipped this week, do it now — or if nothing's pending, use this slot for a project/skill hour instead."],
-  ["talk practice", "Read something aloud for 5-10 min, or do a Speechling submission. Recording yourself and listening back also counts."],
   ["study", "20-30 min focused block — rotate between Java/Spring Boot, Korean, or sign language depending on what you feel like that day."],
-  ["dance", "Put on a playlist you love and move for 20-30 min — freestyle or an online dance workout video, whatever actually feels fun."],
-  ["HIIT", "15-20 min circuit: ~30 sec work / 15 sec rest, 3-4 rounds. E.g. jumping jacks, mountain climbers, squat jumps, high knees (skip anything that aggravates your back)."],
-  ["mobility", "10-15 min of stretching — hips, hamstrings, lower back, neck and shoulders. Good for sore or tired days."],
-  ["strength", "Bodyweight circuit: squats, push-ups, glute bridges, lunges, plank hold. 2-3 sets of 10-15 reps each."],
-  ["run", "Early on: alternate 1 min jog / 1-2 min walk for 15-20 min. As it gets easier, stretch the jog intervals. Build pace over weeks, not in one run."],
   ["prep day", "Iron/lay out the week's outfits, handle laundry if it's due, and glance over what's coming up this week."],
   ["reflect", "A few lines: what felt like a win this week, what you skipped and why. No pressure to write a lot."],
   ["weigh-in", "One weekly weigh-in, same time of day if possible (e.g. first thing in the morning) for consistency."],
@@ -71,6 +65,111 @@ function getTaskInfo(text) {
   const lower = text.toLowerCase();
   const match = TASK_INFO.find(([key]) => lower.includes(key.toLowerCase()));
   return match ? match[1] : null;
+}
+
+// ---------- Simple move illustrations (line-art, no external images needed) ----------
+const EXERCISE_ICONS = {
+  jumpingJack: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="20" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="20" y1="11" x2="20" y2="24" stroke="currentColor" stroke-width="2"/><line x1="20" y1="14" x2="8" y2="6" stroke="currentColor" stroke-width="2"/><line x1="20" y1="14" x2="32" y2="6" stroke="currentColor" stroke-width="2"/><line x1="20" y1="24" x2="8" y2="36" stroke="currentColor" stroke-width="2"/><line x1="20" y1="24" x2="32" y2="36" stroke="currentColor" stroke-width="2"/></svg>`,
+  mountainClimber: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="10" cy="10" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="10" y1="14" x2="30" y2="30" stroke="currentColor" stroke-width="2"/><line x1="30" y1="30" x2="36" y2="30" stroke="currentColor" stroke-width="2"/><line x1="10" y1="14" x2="4" y2="30" stroke="currentColor" stroke-width="2"/><line x1="18" y1="22" x2="10" y2="16" stroke="currentColor" stroke-width="2"/><line x1="18" y1="22" x2="26" y2="14" stroke="currentColor" stroke-width="2"/></svg>`,
+  squat: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="20" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="20" y1="12" x2="20" y2="22" stroke="currentColor" stroke-width="2"/><line x1="20" y1="15" x2="10" y2="20" stroke="currentColor" stroke-width="2"/><line x1="20" y1="15" x2="30" y2="20" stroke="currentColor" stroke-width="2"/><line x1="20" y1="22" x2="12" y2="30" stroke="currentColor" stroke-width="2"/><line x1="12" y1="30" x2="12" y2="36" stroke="currentColor" stroke-width="2"/><line x1="20" y1="22" x2="28" y2="30" stroke="currentColor" stroke-width="2"/><line x1="28" y1="30" x2="28" y2="36" stroke="currentColor" stroke-width="2"/></svg>`,
+  highKnees: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="20" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="20" y1="11" x2="20" y2="24" stroke="currentColor" stroke-width="2"/><line x1="20" y1="24" x2="12" y2="16" stroke="currentColor" stroke-width="2"/><line x1="12" y1="16" x2="10" y2="26" stroke="currentColor" stroke-width="2"/><line x1="20" y1="24" x2="28" y2="34" stroke="currentColor" stroke-width="2"/><line x1="20" y1="14" x2="10" y2="10" stroke="currentColor" stroke-width="2"/><line x1="20" y1="14" x2="30" y2="18" stroke="currentColor" stroke-width="2"/></svg>`,
+  plank: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="8" cy="24" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="24" x2="34" y2="14" stroke="currentColor" stroke-width="2"/><line x1="16" y1="22" x2="12" y2="32" stroke="currentColor" stroke-width="2"/><line x1="34" y1="14" x2="30" y2="24" stroke="currentColor" stroke-width="2"/></svg>`,
+  lunge: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="18" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="18" y1="11" x2="20" y2="22" stroke="currentColor" stroke-width="2"/><line x1="20" y1="22" x2="10" y2="26" stroke="currentColor" stroke-width="2"/><line x1="10" y1="26" x2="8" y2="36" stroke="currentColor" stroke-width="2"/><line x1="20" y1="22" x2="30" y2="30" stroke="currentColor" stroke-width="2"/><line x1="30" y1="30" x2="26" y2="36" stroke="currentColor" stroke-width="2"/></svg>`,
+  pushup: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="8" cy="22" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="22" x2="34" y2="18" stroke="currentColor" stroke-width="2"/><line x1="14" y1="21" x2="14" y2="30" stroke="currentColor" stroke-width="2"/><line x1="30" y1="19" x2="30" y2="30" stroke="currentColor" stroke-width="2"/></svg>`,
+  gluteBridge: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="8" cy="28" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="26" x2="24" y2="18" stroke="currentColor" stroke-width="2"/><line x1="24" y1="18" x2="34" y2="26" stroke="currentColor" stroke-width="2"/><line x1="24" y1="18" x2="22" y2="30" stroke="currentColor" stroke-width="2"/></svg>`,
+  stretch: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="20" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><line x1="20" y1="12" x2="20" y2="28" stroke="currentColor" stroke-width="2"/><line x1="20" y1="16" x2="8" y2="8" stroke="currentColor" stroke-width="2"/><line x1="20" y1="16" x2="32" y2="24" stroke="currentColor" stroke-width="2"/><line x1="20" y1="28" x2="14" y2="36" stroke="currentColor" stroke-width="2"/><line x1="20" y1="28" x2="26" y2="36" stroke="currentColor" stroke-width="2"/></svg>`,
+  talk: `<svg viewBox="0 0 40 40" width="30" height="30"><circle cx="16" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 30 Q16 22 24 30" fill="none" stroke="currentColor" stroke-width="2"/><path d="M26 10 Q34 12 32 20 Q30 24 24 22" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
+};
+
+// ---------- Structured routines (workouts, run, articulation) ----------
+const ROUTINE_LIBRARY = {
+  hiit: {
+    title: "HIIT",
+    duration: "~18 min",
+    blocks: [
+      { phase: "warm-up", detail: "2 min easy marching in place" },
+      { phase: "4 rounds — 30s work / 15s rest between moves, 30s rest between rounds", moves: [
+        { name: "Jumping jacks", time: "30s", icon: "jumpingJack" },
+        { name: "Mountain climbers", time: "30s", icon: "mountainClimber" },
+        { name: "Squat jumps", time: "30s", icon: "squat" },
+        { name: "High knees", time: "30s", icon: "highKnees" },
+      ]},
+      { phase: "cooldown", detail: "2 min light stretching", icon: "stretch" },
+    ],
+    note: "Skip squat jumps if your back is bothering you — swap in regular squats instead.",
+  },
+  mobility: {
+    title: "Mobility & Stretch",
+    duration: "~12 min",
+    blocks: [
+      { phase: "hold each ~45s (both sides where it applies)", moves: [
+        { name: "Neck rolls", time: "45s", icon: "stretch" },
+        { name: "Shoulder rolls & arm circles", time: "45s", icon: "stretch" },
+        { name: "Cat-cow (on all fours)", time: "45s", icon: "stretch" },
+        { name: "Hip flexor lunge stretch", time: "45s/side", icon: "lunge" },
+        { name: "Hamstring forward fold", time: "45s", icon: "stretch" },
+        { name: "Seated lower-back twist", time: "45s/side", icon: "stretch" },
+      ]},
+    ],
+  },
+  strength: {
+    title: "Bodyweight Strength",
+    duration: "~15 min",
+    blocks: [
+      { phase: "3 rounds — 60s rest between rounds", moves: [
+        { name: "Squats", time: "12-15 reps", icon: "squat" },
+        { name: "Push-ups (knees down is fine)", time: "8-12 reps", icon: "pushup" },
+        { name: "Glute bridges", time: "12-15 reps", icon: "gluteBridge" },
+        { name: "Lunges", time: "10 reps/leg", icon: "lunge" },
+        { name: "Plank hold", time: "20-40s", icon: "plank" },
+      ]},
+    ],
+  },
+  dance: {
+    title: "Dance Session",
+    duration: "20-30 min",
+    blocks: [
+      { phase: "freestyle", detail: "Put on a playlist you love and just move — no set steps. Follow an online dance workout video instead if you want structure." },
+    ],
+  },
+  run: {
+    title: "Run",
+    duration: "15-20 min",
+    blocks: [
+      { phase: "early weeks — repeat for 15-20 min total", moves: [
+        { name: "Jog", time: "1 min", icon: "highKnees" },
+        { name: "Walk", time: "1-2 min", icon: "stretch" },
+      ]},
+    ],
+    note: "As it gets easier, stretch the jog interval longer before extending the walk-break version. Build pace over weeks, not in one run.",
+  },
+  articulation: {
+    title: "Articulation Practice",
+    duration: "10 min",
+    blocks: [
+      { phase: "warm-up", detail: "2 min — a few tongue twisters, exaggerate your mouth movements", icon: "talk" },
+      { phase: "read aloud", detail: "5 min — read anything (book, article, subtitles) slowly and clearly, focus on enunciation", icon: "talk" },
+      { phase: "record & reflect", detail: "3 min — record yourself talking about any random topic, then play it back once", icon: "talk" },
+    ],
+  },
+};
+
+function renderRoutine(routine) {
+  let html = `<div class="routine"><div class="routine-head">${routine.title} <span>${routine.duration}</span></div>`;
+  routine.blocks.forEach((b) => {
+    html += `<div class="routine-block"><p class="routine-phase">${b.phase}</p>`;
+    if (b.moves) {
+      b.moves.forEach((m) => {
+        html += `<div class="routine-move"><span class="move-icon">${EXERCISE_ICONS[m.icon] || ""}</span><span>${m.name}</span><span class="move-time">${m.time}</span></div>`;
+      });
+    } else {
+      html += `<div class="routine-move"><span class="move-icon">${b.icon ? EXERCISE_ICONS[b.icon] || "" : ""}</span><span>${b.detail}</span></div>`;
+    }
+    html += `</div>`;
+  });
+  if (routine.note) html += `<p class="routine-note">${routine.note}</p>`;
+  html += `</div>`;
+  return html;
 }
 
 // ---------- Rendering ----------
@@ -139,15 +238,17 @@ function renderGoalItem(g, preview) {
   const div = document.createElement("div");
   div.className = "goal-item" + (preview ? " preview" : (g.status !== "pending" ? " " + g.status : ""));
   const statusLabel = g.status === "pending" ? "" : `<small>${g.status}${g.proof ? " · proof attached" : ""}</small>`;
-  const info = getTaskInfo(g.text);
+  const routine = g.routineKey && ROUTINE_LIBRARY[g.routineKey];
+  const info = routine ? renderRoutine(routine) : getTaskInfo(g.text);
+  const hasInfo = !!info;
   div.innerHTML = `
     <div class="goal-main">
-      <div class="goal-text"${info ? ' style="cursor:pointer;"' : ""}>${g.text}${statusLabel}</div>
-      ${info ? `<div class="goal-info hidden">${info}</div>` : ""}
+      <div class="goal-text"${hasInfo ? ' style="cursor:pointer;"' : ""}>${g.text}${statusLabel}</div>
+      ${hasInfo ? `<div class="goal-info hidden">${info}</div>` : ""}
       <div class="goal-actions"></div>
     </div>
   `;
-  if (info) {
+  if (hasInfo) {
     div.querySelector(".goal-text").onclick = () => {
       div.querySelector(".goal-info").classList.toggle("hidden");
     };
@@ -416,33 +517,63 @@ function walkTargetForDay(dayIndex) {
   return Math.min(20, 3 + stage * 2);
 }
 
-const WORKOUTS = ["dance session", "HIIT (15-20 min)", "mobility & stretch", "bodyweight strength"];
+const WORKOUT_ROTATION = ["dance", "hiit", "mobility", "strength"];
+
+const SIDE_QUESTS = [
+  "clean the table",
+  "organize the cupboard",
+  "no-sugar day",
+  "no-spend day",
+  "declutter one drawer",
+  "tidy the wardrobe",
+  "water-only day (skip soda/juice)",
+  "make the bed properly",
+  "clean your work desk",
+  "organize your phone gallery",
+  "wipe down the bathroom mirror & sink",
+  "sort laundry into piles",
+  "clear old screenshots off your phone",
+  "10-min deep clean of one corner",
+  "unsubscribe from 3 unused emails/apps",
+  "tidy your shoes/footwear area",
+  "clean out your bag or purse",
+  "organize your skincare shelf",
+];
+
+function sideQuestForDay(dayIndex) {
+  return SIDE_QUESTS[dayIndex % SIDE_QUESTS.length];
+}
 
 function generateGoalsForDate(dayIndex, weekday) {
   const target = walkTargetForDay(dayIndex);
   const goals = [];
   if (weekday >= 1 && weekday <= 4) {
-    // Mon-Thu (office days)
+    // Mon-Thu (office days) — 5 items: walk, workout, protein, articulation, + rotating study/screen-check
+    const workoutKey = WORKOUT_ROTATION[dayIndex % WORKOUT_ROTATION.length];
     goals.push({ text: `walk ${target}k steps`, needsProof: true });
-    goals.push({ text: WORKOUTS[dayIndex % WORKOUTS.length], needsProof: true });
+    goals.push({ text: ROUTINE_LIBRARY[workoutKey].title, needsProof: true, routineKey: workoutKey });
     goals.push({ text: "protein ~80g today", needsProof: false });
-    goals.push({ text: (dayIndex % 2 === 0) ? "study/skill practice" : "articulation practice", needsProof: false });
-    if (dayIndex % 3 === 0) {
+    goals.push({ text: "articulation practice (10 min)", needsProof: false, routineKey: "articulation" });
+    if (dayIndex % 2 === 0) {
+      goals.push({ text: "study/skill practice", needsProof: false });
+    } else {
       goals.push({ text: "screen time check — proof: screenshot", needsProof: true });
     }
   } else if (weekday === 5) {
-    // Friday WFH
+    // Friday WFH — walk, catch-up, protein, articulation, side quest
     goals.push({ text: `walk ${target}k steps`, needsProof: true });
     goals.push({ text: "catch-up workout (whatever got skipped)", needsProof: true });
     goals.push({ text: "protein ~80g today", needsProof: false });
-    goals.push({ text: "project / skill time", needsProof: false });
+    goals.push({ text: "articulation practice (10 min)", needsProof: false, routineKey: "articulation" });
+    goals.push({ text: sideQuestForDay(dayIndex), needsProof: false });
   } else if (weekday === 6) {
-    // Saturday — run day
-    goals.push({ text: "run (build pace gradually)", needsProof: true });
+    // Saturday — run, protein, articulation, side quest
+    goals.push({ text: "run (build pace gradually)", needsProof: true, routineKey: "run" });
     goals.push({ text: "protein ~80g today", needsProof: false });
-    goals.push({ text: "something fun & active — your call", needsProof: false });
+    goals.push({ text: "articulation practice (10 min)", needsProof: false, routineKey: "articulation" });
+    goals.push({ text: sideQuestForDay(dayIndex), needsProof: false });
   } else {
-    // Sunday — prep day
+    // Sunday — prep day, kept lighter on purpose (no articulation/side-quest)
     goals.push({ text: "prep day: iron clothes + plan the week's outfits", needsProof: false });
     goals.push({ text: "light movement: walk or stretch", needsProof: false });
     goals.push({ text: "weekly reflection + weigh-in", needsProof: false });
@@ -461,7 +592,7 @@ async function seedGoalsIfNeeded(startDate) {
     const weekday = d.getDay();
     const goals = generateGoalsForDate(i, weekday);
     for (const g of goals) {
-      await addGoalRecord({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null });
+      await addGoalRecord({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null, routineKey: g.routineKey || null });
     }
   }
   localStorage.setItem(SEEDED_KEY, "1");
