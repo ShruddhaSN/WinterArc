@@ -154,6 +154,14 @@ main {
   font-size: 12.5px; color: var(--text-dim); background: var(--frost);
   border-radius: 3px; padding: 9px 11px; line-height: 1.5;
 }
+.routine-head { font-family: 'Fraunces', serif; font-style: italic; font-size: 14px; color: var(--ink); margin-bottom: 8px; }
+.routine-head span { font-family: 'Work Sans', sans-serif; font-style: normal; font-size: 11px; color: var(--text-dim); margin-left: 6px; }
+.routine-block { margin-bottom: 10px; }
+.routine-phase { font-size: 11px; color: var(--gold-dim); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
+.routine-move { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.move-icon { color: var(--ink); flex-shrink: 0; width: 30px; display: flex; justify-content: center; }
+.move-time { margin-left: auto; color: var(--text-dim); font-size: 11.5px; }
+.routine-note { font-size: 11.5px; color: var(--clay); font-style: italic; margin: 6px 0 0; }
 .goal-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .icon-btn {
   width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--frost-dim);
