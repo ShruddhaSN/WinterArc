@@ -314,3 +314,253 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+// ---------- Auth (client-side only — this is a local personal app, not a real backend) ----------
+const CREDS_KEY = "wa_creds";
+const SEEDED_KEY = "wa_seeded";
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function getCreds() {
+  const raw = localStorage.getItem(CREDS_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+
+async function initAuth() {
+  const creds = getCreds();
+  if (!creds) {
+    document.getElementById("setupForm").classList.remove("hidden");
+    document.getElementById("loginForm").classList.add("hidden");
+    const dateInput = document.getElementById("setupStartDate");
+    dateInput.value = todayStr();
+  } else {
+    document.getElementById("setupForm").classList.add("hidden");
+    document.getElementById("loginForm").classList.remove("hidden");
+  }
+}
+
+document.getElementById("setupBtn").onclick = async () => {
+  const user = document.getElementById("setupUser").value.trim();
+  const pass = document.getElementById("setupPass").value;
+  const pass2 = document.getElementById("setupPass2").value;
+  const startDate = document.getElementById("setupStartDate").value;
+  const errEl = document.getElementById("setupError");
+  if (!user || !pass || !startDate) { errEl.textContent = "fill in every field."; return; }
+  if (pass !== pass2) { errEl.textContent = "passwords don't match."; return; }
+  const hash = await sha256(pass);
+  localStorage.setItem(CREDS_KEY, JSON.stringify({ user, hash, startDate }));
+  await unlockApp(startDate);
+};
+
+document.getElementById("loginBtn").onclick = async () => {
+  const user = document.getElementById("loginUser").value.trim();
+  const pass = document.getElementById("loginPass").value;
+  const errEl = document.getElementById("loginError");
+  const creds = getCreds();
+  const hash = await sha256(pass);
+  if (creds && creds.user === user && creds.hash === hash) {
+    await unlockApp(creds.startDate);
+  } else {
+    errEl.textContent = "wrong username or password.";
+  }
+};
+
+async function unlockApp(startDate) {
+  document.getElementById("authScreen").classList.add("hidden");
+  document.getElementById("appScreen").classList.remove("hidden");
+  await seedGoalsIfNeeded(startDate);
+  drawWheel();
+  updateSpinUI();
+  renderMilestones();
+  render();
+}
+
+// ---------- 90-day pre-fed goal plan ----------
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function walkTargetForDay(dayIndex) {
+  const stage = Math.floor(dayIndex / 14);
+  return Math.min(20, 3 + stage * 2);
+}
+
+const WORKOUTS = ["dance session", "HIIT (15-20 min)", "mobility & stretch", "bodyweight strength"];
+
+function generateGoalsForDate(dayIndex, weekday) {
+  const target = walkTargetForDay(dayIndex);
+  const goals = [];
+  if (weekday >= 1 && weekday <= 4) {
+    goals.push({ text: `walk ${target}k steps`, needsProof: true });
+    goals.push({ text: WORKOUTS[dayIndex % WORKOUTS.length], needsProof: true });
+    goals.push({ text: "protein ~80g today", needsProof: false });
+    goals.push({ text: (dayIndex % 2 === 0) ? "study/skill practice" : "articulation practice", needsProof: false });
+    if (dayIndex % 3 === 0) {
+      goals.push({ text: "screen time check — proof: screenshot", needsProof: true });
+    }
+  } else if (weekday === 5) {
+    goals.push({ text: `walk ${target}k steps`, needsProof: true });
+    goals.push({ text: "catch-up workout (whatever got skipped)", needsProof: true });
+    goals.push({ text: "protein ~80g today", needsProof: false });
+    goals.push({ text: "project / skill time", needsProof: false });
+  } else if (weekday === 6) {
+    goals.push({ text: "run (build pace gradually)", needsProof: true });
+    goals.push({ text: "protein ~80g today", needsProof: false });
+    goals.push({ text: "something fun & active — your call", needsProof: false });
+  } else {
+    goals.push({ text: "prep day: iron clothes + plan the week's outfits", needsProof: false });
+    goals.push({ text: "light movement: walk or stretch", needsProof: false });
+    goals.push({ text: "weekly reflection + weigh-in", needsProof: false });
+    goals.push({ text: "protein ~80g today", needsProof: false });
+  }
+  return goals;
+}
+
+async function seedGoalsIfNeeded(startDate) {
+  if (localStorage.getItem(SEEDED_KEY)) return;
+  const all = await getAllGoals();
+  if (all.length > 0) { localStorage.setItem(SEEDED_KEY, "1"); return; }
+  for (let i = 0; i < 90; i++) {
+    const d = addDays(startDate, i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const weekday = d.getDay();
+    const goals = generateGoalsForDate(i, weekday);
+    for (const g of goals) {
+      await addGoalRecord({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null });
+    }
+  }
+  localStorage.setItem(SEEDED_KEY, "1");
+}
+
+// ---------- Rewards: spin wheel + milestones ----------
+const REWARDS = [
+  "order from somewhere new",
+  "no rules today — skip it all, no guilt",
+  "small surprise splurge (set a budget)",
+  "new yarn or pattern to crochet",
+  "at-home spa night",
+  "dress-up night, no occasion needed",
+  "try a genre you've never watched",
+  "solo outing, dressed up, no agenda",
+  "a beauty treat you don't usually buy",
+  "open your seal-a-surprise envelope",
+];
+const MILESTONES = [
+  { day: 30, text: "a skincare/beauty treat you've been eyeing" },
+  { day: 60, text: "a day out doing something you actually want" },
+  { day: 90, text: "the big one — whatever's been the real finish line" },
+];
+const LAST_SPIN_KEY = "wa_lastSpin";
+const SPIN_HISTORY_KEY = "wa_spinHistory";
+const WHEEL_COLORS = ["#534AB7", "#7F77DD", "#0F6E56", "#1D9E75", "#D85A30", "#F0997B", "#993556", "#D4537E", "#26215C", "#888780"];
+
+function drawWheel() {
+  const canvas = document.getElementById("rewardWheel");
+  const ctx = canvas.getContext("2d");
+  const n = REWARDS.length;
+  const cx = canvas.width / 2, cy = canvas.height / 2, r = canvas.width / 2 - 4;
+  const slice = (Math.PI * 2) / n;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, i * slice, (i + 1) * slice);
+    ctx.closePath();
+    ctx.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length];
+    ctx.fill();
+  }
+}
+
+function currentDayNumber() {
+  const creds = getCreds();
+  if (!creds) return 1;
+  const start = new Date(creds.startDate + "T00:00:00");
+  const now = new Date();
+  return Math.max(1, Math.min(90, Math.floor((now - start) / 86400000) + 1));
+}
+
+function canSpinThisWeek() {
+  const last = localStorage.getItem(LAST_SPIN_KEY);
+  if (!last) return true;
+  const daysSince = (Date.now() - Number(last)) / 86400000;
+  return daysSince >= 7;
+}
+
+function updateSpinUI() {
+  const hint = document.getElementById("spinHint");
+  const btn = document.getElementById("spinBtn");
+  if (canSpinThisWeek()) {
+    hint.textContent = "available now";
+    btn.disabled = false;
+  } else {
+    const last = Number(localStorage.getItem(LAST_SPIN_KEY));
+    const daysLeft = Math.ceil(7 - (Date.now() - last) / 86400000);
+    hint.textContent = `next spin in ~${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+    btn.disabled = true;
+  }
+  const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
+  document.getElementById("spinResult").textContent = history.length ? `last: ${history[history.length - 1].reward}` : "";
+}
+
+document.getElementById("spinBtn").onclick = () => {
+  if (!canSpinThisWeek()) return;
+  const n = REWARDS.length;
+  const winnerIndex = Math.floor(Math.random() * n);
+  const slice = 360 / n;
+  const targetAngle = 360 * 4 + (360 - (winnerIndex * slice + slice / 2));
+  const canvas = document.getElementById("rewardWheel");
+  canvas.style.transform = `rotate(${targetAngle}deg)`;
+  setTimeout(() => {
+    const reward = REWARDS[winnerIndex];
+    localStorage.setItem(LAST_SPIN_KEY, String(Date.now()));
+    const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
+    history.push({ date: todayStr(), reward });
+    localStorage.setItem(SPIN_HISTORY_KEY, JSON.stringify(history));
+    document.getElementById("spinResult").textContent = `you got: ${reward}`;
+    updateSpinUI();
+  }, 4000);
+};
+
+function renderMilestones() {
+  const dayNum = currentDayNumber();
+  const list = document.getElementById("milestoneList");
+  list.innerHTML = "";
+  MILESTONES.forEach((m) => {
+    const reached = dayNum >= m.day;
+    const div = document.createElement("div");
+    div.className = "milestone-item" + (reached ? " reached" : "");
+    div.innerHTML = `<span>day ${m.day} — ${m.text}</span><span class="badge">${reached ? "unlocked" : "locked"}</span>`;
+    list.appendChild(div);
+  });
+}
+
+// ---------- Init ----------
+openDB().then(async () => {
+  await initAuth();
+});
+
+function updateDayline() {
+  const creds = getCreds();
+  if (!creds) return;
+  const start = new Date(creds.startDate + "T00:00:00");
+  const now = new Date();
+  const dayNum = Math.floor((now - start) / 86400000) + 1;
+  const clamped = Math.max(1, Math.min(90, dayNum));
+  document.getElementById("dayline").textContent = `day ${clamped} of 90`;
+}
+
+const originalRender = render;
+render = async function () {
+  await originalRender();
+  updateDayline();
+  renderMilestones();
+  updateSpinUI();
+};
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js").catch(() => {});
+}
