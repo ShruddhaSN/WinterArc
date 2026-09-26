@@ -58,6 +58,15 @@
 
     <main>
       <div class="col-main">
+        <section class="card catchup-card hidden" id="catchupCard">
+          <div class="card-head">
+            <h2>catch up</h2>
+            <button id="clearCatchupBtn" class="btn secondary small">clear all</button>
+          </div>
+          <p class="hint">left over from a previous day — resolve these whenever, no pressure on timing.</p>
+          <div id="catchupList" class="goal-list" style="margin-top:10px;"></div>
+        </section>
+
         <section class="card">
           <div class="card-head">
             <h2 id="goalsHeading">today's goals</h2>
