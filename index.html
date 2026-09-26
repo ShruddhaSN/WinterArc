@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Winter Arc</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#3C3489" />
+<meta name="theme-color" content="#14182B" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -39,58 +40,66 @@
   <!-- Main app -->
   <div id="appScreen" class="hidden">
     <header class="topbar">
-      <div>
-        <h1>winter arc</h1>
-        <p class="dateline" id="dateline"></p>
-        <p class="dayline" id="dayline"></p>
-      </div>
-      <div class="stats">
-        <div class="stat"><span id="streakVal">0</span><small>streak</small></div>
-        <div class="stat"><span id="pointsVal">0</span><small>points</small></div>
+      <div class="topbar-inner">
+        <div class="topbar-row">
+          <div>
+            <h1>winter arc</h1>
+            <p class="dayline" id="dayline"></p>
+          </div>
+          <div class="stats">
+            <div class="stat"><span id="streakVal">0</span><small>streak</small></div>
+            <div class="stat"><span id="pointsVal">0</span><small>points</small></div>
+          </div>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
       </div>
     </header>
 
     <main>
-      <section class="card">
-        <div class="card-head">
-          <h2>today's goals</h2>
-          <button id="addGoalBtn" class="btn primary small">+ extra</button>
-        </div>
-        <div id="goalList" class="goal-list"></div>
-        <p id="emptyState" class="empty">nothing pre-planned for today — add something below.</p>
-      </section>
+      <div class="col-main">
+        <section class="card">
+          <div class="card-head">
+            <h2>today's goals</h2>
+            <button id="addGoalBtn" class="btn primary small">+ extra</button>
+          </div>
+          <div id="goalList" class="goal-list"></div>
+          <p id="emptyState" class="empty">nothing pre-planned for today.</p>
+        </section>
 
-      <section class="card">
-        <div class="card-head">
-          <h2>history</h2>
-        </div>
-        <div id="historyList" class="history-list"></div>
-      </section>
+        <section class="card">
+          <div class="card-head">
+            <h2>history</h2>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+      </div>
 
-      <section class="card recap-card">
-        <div class="card-head">
-          <h2>end of arc</h2>
-        </div>
-        <p class="hint">whenever you're ready — turn every win and postponed day into one recap video.</p>
-        <button id="recapBtn" class="btn accent">generate recap video</button>
-        <div id="recapStatus" class="hint"></div>
-        <video id="recapVideo" controls style="display:none; width:100%; border-radius:12px; margin-top:10px;"></video>
-        <a id="downloadLink" style="display:none;" class="btn secondary" download="winter-arc-recap.webm">download video</a>
-      </section>
+      <div class="col-side">
+        <section class="card recap-card">
+          <div class="card-head">
+            <h2>end of arc</h2>
+          </div>
+          <p class="hint">whenever you're ready — turn every win and postponed day into one recap video.</p>
+          <button id="recapBtn" class="btn accent full" style="margin-top:10px;">generate recap video</button>
+          <div id="recapStatus" class="hint"></div>
+          <video id="recapVideo" controls style="display:none; width:100%; border-radius:4px; margin-top:10px;"></video>
+          <a id="downloadLink" style="display:none; margin-top:8px;" class="btn secondary full" download="winter-arc-recap.webm">download video</a>
+        </section>
 
-      <section class="card">
-        <div class="card-head">
-          <h2>rewards</h2>
-        </div>
-        <div class="wheel-wrap">
-          <canvas id="rewardWheel" width="220" height="220"></canvas>
-          <div class="wheel-pointer"></div>
-        </div>
-        <button id="spinBtn" class="btn accent full">spin for this week's reward</button>
-        <p id="spinHint" class="hint"></p>
-        <p id="spinResult" class="reward-result"></p>
-        <div id="milestoneList" class="milestone-list"></div>
-      </section>
+        <section class="card">
+          <div class="card-head">
+            <h2>rewards</h2>
+          </div>
+          <div class="wheel-wrap">
+            <canvas id="rewardWheel" width="220" height="220"></canvas>
+            <div class="wheel-pointer"></div>
+          </div>
+          <button id="spinBtn" class="btn accent full">spin for this week's reward</button>
+          <p id="spinHint" class="hint" style="text-align:center;"></p>
+          <p id="spinResult" class="reward-result"></p>
+          <div id="milestoneList" class="milestone-list"></div>
+        </section>
+      </div>
     </main>
   </div>
 
