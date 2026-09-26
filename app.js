@@ -77,20 +77,34 @@ function getTaskInfo(text) {
 async function render() {
   const all = await getAllGoals();
   const today = todayStr();
-  const todaysGoals = all.filter((g) => g.date === today);
+  const creds = getCreds();
+  const raw = rawDayNumber();
 
-  document.getElementById("dateline").textContent = new Date().toDateString();
-
+  // today's list (or a preview of day 1 if the arc hasn't started yet)
   const list = document.getElementById("goalList");
   const empty = document.getElementById("emptyState");
   list.innerHTML = "";
-  if (todaysGoals.length === 0) {
-    empty.style.display = "block";
-  } else {
+
+  if (creds && raw < 1) {
+    const previewGoals = all.filter((g) => g.date === creds.startDate);
     empty.style.display = "none";
-    todaysGoals.forEach((g) => list.appendChild(renderGoalItem(g)));
+    const label = document.createElement("p");
+    label.className = "hint";
+    label.style.marginBottom = "8px";
+    label.textContent = `arc starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} — here's a peek at day 1:`;
+    list.appendChild(label);
+    previewGoals.forEach((g) => list.appendChild(renderGoalItem(g, true)));
+  } else {
+    const todaysGoals = all.filter((g) => g.date === today);
+    if (todaysGoals.length === 0) {
+      empty.style.display = "block";
+    } else {
+      empty.style.display = "none";
+      todaysGoals.forEach((g) => list.appendChild(renderGoalItem(g)));
+    }
   }
 
+  // history (group by date, excluding today)
   const historyList = document.getElementById("historyList");
   historyList.innerHTML = "";
   const byDate = {};
@@ -114,13 +128,14 @@ async function render() {
     historyList.appendChild(row);
   });
 
+  // streak + points
   document.getElementById("pointsVal").textContent = computePoints(all);
   document.getElementById("streakVal").textContent = computeStreak(all);
 }
 
-function renderGoalItem(g) {
+function renderGoalItem(g, preview) {
   const div = document.createElement("div");
-  div.className = "goal-item" + (g.status !== "pending" ? " " + g.status : "");
+  div.className = "goal-item" + (preview ? " preview" : (g.status !== "pending" ? " " + g.status : ""));
   const statusLabel = g.status === "pending" ? "" : `<small>${g.status}${g.proof ? " · proof attached" : ""}</small>`;
   const info = getTaskInfo(g.text);
   div.innerHTML = `
@@ -136,18 +151,20 @@ function renderGoalItem(g) {
     };
   }
   const actions = div.querySelector(".goal-actions");
-  if (g.status === "pending") {
-    actions.appendChild(makeBtn("done", "btn small primary", () => openProofModal(g, "done")));
-    actions.appendChild(makeBtn("postpone", "btn small secondary", () => setStatus(g, "postponed")));
-    actions.appendChild(makeBtn("skip", "btn small secondary", () => openProofModal(g, "skipped")));
+  if (!preview && g.status === "pending") {
+    actions.appendChild(makeIconBtn("✓", "icon-btn done-btn", "mark done", () => openProofModal(g, "done")));
+    actions.appendChild(makeIconBtn("⏭", "icon-btn postpone-btn", "postpone", () => setStatus(g, "postponed")));
+    actions.appendChild(makeIconBtn("✕", "icon-btn skip-btn", "skip", () => openProofModal(g, "skipped")));
   }
   return div;
 }
 
-function makeBtn(label, cls, onClick) {
+function makeIconBtn(symbol, cls, title, onClick) {
   const b = document.createElement("button");
-  b.textContent = label;
+  b.textContent = symbol;
   b.className = cls;
+  b.title = title;
+  b.setAttribute("aria-label", title);
   b.onclick = onClick;
   return b;
 }
@@ -314,6 +331,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
 // ---------- Auth (client-side only — this is a local personal app, not a real backend) ----------
 const CREDS_KEY = "wa_creds";
 const SEEDED_KEY = "wa_seeded";
@@ -385,7 +403,7 @@ function addDays(dateStr, n) {
 }
 
 function walkTargetForDay(dayIndex) {
-  const stage = Math.floor(dayIndex / 14);
+  const stage = Math.floor(dayIndex / 14); // step up every 2 weeks
   return Math.min(20, 3 + stage * 2);
 }
 
@@ -395,6 +413,7 @@ function generateGoalsForDate(dayIndex, weekday) {
   const target = walkTargetForDay(dayIndex);
   const goals = [];
   if (weekday >= 1 && weekday <= 4) {
+    // Mon-Thu (office days)
     goals.push({ text: `walk ${target}k steps`, needsProof: true });
     goals.push({ text: WORKOUTS[dayIndex % WORKOUTS.length], needsProof: true });
     goals.push({ text: "protein ~80g today", needsProof: false });
@@ -403,15 +422,18 @@ function generateGoalsForDate(dayIndex, weekday) {
       goals.push({ text: "screen time check — proof: screenshot", needsProof: true });
     }
   } else if (weekday === 5) {
+    // Friday WFH
     goals.push({ text: `walk ${target}k steps`, needsProof: true });
     goals.push({ text: "catch-up workout (whatever got skipped)", needsProof: true });
     goals.push({ text: "protein ~80g today", needsProof: false });
     goals.push({ text: "project / skill time", needsProof: false });
   } else if (weekday === 6) {
+    // Saturday — run day
     goals.push({ text: "run (build pace gradually)", needsProof: true });
     goals.push({ text: "protein ~80g today", needsProof: false });
     goals.push({ text: "something fun & active — your call", needsProof: false });
   } else {
+    // Sunday — prep day
     goals.push({ text: "prep day: iron clothes + plan the week's outfits", needsProof: false });
     goals.push({ text: "light movement: walk or stretch", needsProof: false });
     goals.push({ text: "weekly reflection + weigh-in", needsProof: false });
@@ -456,7 +478,7 @@ const MILESTONES = [
 ];
 const LAST_SPIN_KEY = "wa_lastSpin";
 const SPIN_HISTORY_KEY = "wa_spinHistory";
-const WHEEL_COLORS = ["#534AB7", "#7F77DD", "#0F6E56", "#1D9E75", "#D85A30", "#F0997B", "#993556", "#D4537E", "#26215C", "#888780"];
+const WHEEL_COLORS = ["#14182B", "#D9A441", "#4F7A5B", "#B25B3E", "#1D2242", "#DCE9DF", "#8B5E3C", "#9A9FBA", "#2E4F38", "#7A3A22"];
 
 function drawWheel() {
   const canvas = document.getElementById("rewardWheel");
@@ -475,31 +497,31 @@ function drawWheel() {
   }
 }
 
-function currentDayNumber() {
-  const creds = getCreds();
-  if (!creds) return 1;
-  const start = new Date(creds.startDate + "T00:00:00");
-  const now = new Date();
-  return Math.max(1, Math.min(90, Math.floor((now - start) / 86400000) + 1));
+function completedWeeks(dayNum) {
+  return dayNum > 0 ? Math.floor(dayNum / 7) : 0;
 }
 
 function canSpinThisWeek() {
-  const last = localStorage.getItem(LAST_SPIN_KEY);
-  if (!last) return true;
-  const daysSince = (Date.now() - Number(last)) / 86400000;
-  return daysSince >= 7;
+  const raw = rawDayNumber();
+  if (raw < 1) return false; // arc hasn't started
+  const lastSpunWeek = Number(localStorage.getItem(LAST_SPIN_KEY) || 0);
+  return completedWeeks(raw) > lastSpunWeek;
 }
 
 function updateSpinUI() {
   const hint = document.getElementById("spinHint");
   const btn = document.getElementById("spinBtn");
-  if (canSpinThisWeek()) {
-    hint.textContent = "available now";
+  const raw = rawDayNumber();
+  if (raw < 1) {
+    hint.textContent = "unlocks once your first week of the arc is done";
+    btn.disabled = true;
+  } else if (canSpinThisWeek()) {
+    hint.textContent = `week ${completedWeeks(raw)} complete — available now`;
     btn.disabled = false;
   } else {
-    const last = Number(localStorage.getItem(LAST_SPIN_KEY));
-    const daysLeft = Math.ceil(7 - (Date.now() - last) / 86400000);
-    hint.textContent = `next spin in ~${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+    const nextUnlockDay = (completedWeeks(raw) + 1) * 7;
+    const daysLeft = nextUnlockDay - raw;
+    hint.textContent = `next spin in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
     btn.disabled = true;
   }
   const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
@@ -516,13 +538,13 @@ document.getElementById("spinBtn").onclick = () => {
   canvas.style.transform = `rotate(${targetAngle}deg)`;
   setTimeout(() => {
     const reward = REWARDS[winnerIndex];
-    localStorage.setItem(LAST_SPIN_KEY, String(Date.now()));
+    localStorage.setItem(LAST_SPIN_KEY, String(completedWeeks(rawDayNumber())));
     const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
     history.push({ date: todayStr(), reward });
     localStorage.setItem(SPIN_HISTORY_KEY, JSON.stringify(history));
     document.getElementById("spinResult").textContent = `you got: ${reward}`;
     updateSpinUI();
-  }, 4000);
+  }, 4200);
 };
 
 function renderMilestones() {
@@ -541,16 +563,38 @@ function renderMilestones() {
 // ---------- Init ----------
 openDB().then(async () => {
   await initAuth();
+  const creds = getCreds();
+  if (creds) {
+    // still on login screen until password entered — nothing to render yet
+  }
 });
+
+function rawDayNumber() {
+  const creds = getCreds();
+  if (!creds) return 1;
+  const start = new Date(creds.startDate + "T00:00:00");
+  const now = new Date();
+  return Math.floor((now - start) / 86400000) + 1;
+}
+
+function currentDayNumber() {
+  return Math.max(1, Math.min(90, rawDayNumber()));
+}
 
 function updateDayline() {
   const creds = getCreds();
   if (!creds) return;
-  const start = new Date(creds.startDate + "T00:00:00");
-  const now = new Date();
-  const dayNum = Math.floor((now - start) / 86400000) + 1;
-  const clamped = Math.max(1, Math.min(90, dayNum));
-  document.getElementById("dayline").textContent = `day ${clamped} of 90`;
+  const raw = rawDayNumber();
+  const dayline = document.getElementById("dayline");
+  const fill = document.getElementById("progressFill");
+  if (raw < 1) {
+    dayline.textContent = `starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} (${creds.startDate})`;
+    fill.style.width = "0%";
+  } else {
+    const clamped = Math.min(90, raw);
+    dayline.textContent = `day ${clamped} of 90`;
+    fill.style.width = `${(clamped / 90) * 100}%`;
+  }
 }
 
 const originalRender = render;
