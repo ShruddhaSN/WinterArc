@@ -205,6 +205,23 @@ async function render() {
     }
   }
 
+  // catch-up: past goals never touched — capped to last 7 days so it can't pile up indefinitely
+  const catchupCard = document.getElementById("catchupCard");
+  const catchupList = document.getElementById("catchupList");
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const cutoff = sevenDaysAgo.toISOString().slice(0, 10);
+  const pastPending = all.filter((g) => g.date < today && g.date >= cutoff && g.status === "pending");
+  catchupList.innerHTML = "";
+  if (pastPending.length > 0) {
+    catchupCard.classList.remove("hidden");
+    pastPending
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((g) => catchupList.appendChild(renderGoalItem(g, false, true)));
+  } else {
+    catchupCard.classList.add("hidden");
+  }
+
   // history (group by date, excluding today)
   const historyList = document.getElementById("historyList");
   historyList.innerHTML = "";
@@ -234,16 +251,17 @@ async function render() {
   document.getElementById("streakVal").textContent = computeStreak(all);
 }
 
-function renderGoalItem(g, preview) {
+function renderGoalItem(g, preview, catchup) {
   const div = document.createElement("div");
   div.className = "goal-item" + (preview ? " preview" : (g.status !== "pending" ? " " + g.status : ""));
   const statusLabel = g.status === "pending" ? "" : `<small>${g.status}${g.proof ? " · proof attached" : ""}</small>`;
+  const dateTag = catchup ? `<small>${g.date}</small>` : "";
   const routine = g.routineKey && ROUTINE_LIBRARY[g.routineKey];
   const info = routine ? renderRoutine(routine) : getTaskInfo(g.text);
   const hasInfo = !!info;
   div.innerHTML = `
     <div class="goal-main">
-      <div class="goal-text"${hasInfo ? ' style="cursor:pointer;"' : ""}>${g.text}${statusLabel}</div>
+      <div class="goal-text"${hasInfo ? ' style="cursor:pointer;"' : ""}>${g.text}${statusLabel}${dateTag}</div>
       ${hasInfo ? `<div class="goal-info hidden">${info}</div>` : ""}
       <div class="goal-actions"></div>
     </div>
@@ -256,7 +274,9 @@ function renderGoalItem(g, preview) {
   const actions = div.querySelector(".goal-actions");
   if (!preview && g.status === "pending") {
     actions.appendChild(makeIconBtn("✓", "icon-btn done-btn", "mark done", () => openProofModal(g, "done")));
-    actions.appendChild(makeIconBtn("⏭", "icon-btn postpone-btn", "postpone", () => setStatus(g, "postponed")));
+    if (!catchup) {
+      actions.appendChild(makeIconBtn("⏭", "icon-btn postpone-btn", "postpone", () => setStatus(g, "postponed")));
+    }
     actions.appendChild(makeIconBtn("✕", "icon-btn skip-btn", "skip", () => openProofModal(g, "skipped")));
   }
   return div;
@@ -299,6 +319,20 @@ function computeStreak(all) {
   }
   return streak;
 }
+
+document.getElementById("clearCatchupBtn").onclick = async () => {
+  const today = todayStr();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const cutoff = sevenDaysAgo.toISOString().slice(0, 10);
+  const all = await getAllGoals();
+  const pastPending = all.filter((g) => g.date < today && g.date >= cutoff && g.status === "pending");
+  for (const g of pastPending) {
+    g.status = "skipped";
+    await updateGoalRecord(g);
+  }
+  render();
+};
 
 // ---------- Add goal modal ----------
 const addModal = document.getElementById("addModal");
@@ -557,7 +591,7 @@ function generateGoalsForDate(dayIndex, weekday) {
     if (dayIndex % 2 === 0) {
       goals.push({ text: "study/skill practice", needsProof: false });
     } else {
-      goals.push({ text: "screen time check — proof: screenshot", needsProof: true });
+      goals.push({ text: "screen time check — under 3 hrs today (proof: screenshot)", needsProof: true });
     }
   } else if (weekday === 5) {
     // Friday WFH — walk, catch-up, protein, articulation, side quest
@@ -695,7 +729,7 @@ function renderMilestones() {
     const reached = dayNum >= m.day;
     const div = document.createElement("div");
     div.className = "milestone-item" + (reached ? " reached" : "");
-    div.innerHTML = `<span>day ${m.day} — ${m.text}</span><span class="badge">${reached ? "unlocked" : "locked"}</span>`;
+    div.innerHTML = `<span>day ${m.day} — ${m.text}</span><span class="badge">${reached ? "✓ unlocked" : "🔒"}</span>`;
     list.appendChild(div);
   });
 }
