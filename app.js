@@ -109,7 +109,7 @@ async function render() {
   historyList.innerHTML = "";
   const byDate = {};
   all.forEach((g) => {
-    if (g.date === today) return;
+    if (g.date >= today) return;
     (byDate[g.date] = byDate[g.date] || []).push(g);
   });
   const dates = Object.keys(byDate).sort().reverse();
@@ -335,6 +335,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 // ---------- Auth (client-side only — this is a local personal app, not a real backend) ----------
 const CREDS_KEY = "wa_creds";
 const SEEDED_KEY = "wa_seeded";
+const SESSION_KEY = "wa_session";
 
 async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -389,11 +390,17 @@ async function unlockApp(startDate) {
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appScreen").classList.remove("hidden");
   await seedGoalsIfNeeded(startDate);
+  localStorage.setItem(SESSION_KEY, "1");
   drawWheel();
   updateSpinUI();
   renderMilestones();
   render();
 }
+
+document.getElementById("logoutBtn").onclick = () => {
+  localStorage.removeItem(SESSION_KEY);
+  location.reload();
+};
 
 // ---------- 90-day pre-fed goal plan ----------
 function addDays(dateStr, n) {
@@ -562,10 +569,11 @@ function renderMilestones() {
 
 // ---------- Init ----------
 openDB().then(async () => {
-  await initAuth();
   const creds = getCreds();
-  if (creds) {
-    // still on login screen until password entered — nothing to render yet
+  if (creds && localStorage.getItem(SESSION_KEY)) {
+    await unlockApp(creds.startDate);
+  } else {
+    await initAuth();
   }
 });
 
