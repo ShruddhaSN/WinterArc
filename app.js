@@ -69,7 +69,7 @@ const TASK_INFO = [
 
 function getTaskInfo(text) {
   const lower = text.toLowerCase();
-  const match = TASK_INFO.find(([key]) => lower.includes(key));
+  const match = TASK_INFO.find(([key]) => lower.includes(key.toLowerCase()));
   return match ? match[1] : null;
 }
 
@@ -88,13 +88,15 @@ async function render() {
   if (creds && raw < 1) {
     const previewGoals = all.filter((g) => g.date === creds.startDate);
     empty.style.display = "none";
+    document.getElementById("goalsHeading").textContent = "day 1 goals";
     const label = document.createElement("p");
     label.className = "hint";
     label.style.marginBottom = "8px";
-    label.textContent = `arc starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} — here's a peek at day 1:`;
+    label.textContent = `arc starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} — here's a peek:`;
     list.appendChild(label);
     previewGoals.forEach((g) => list.appendChild(renderGoalItem(g, true)));
   } else {
+    document.getElementById("goalsHeading").textContent = "today's goals";
     const todaysGoals = all.filter((g) => g.date === today);
     if (todaysGoals.length === 0) {
       empty.style.display = "block";
