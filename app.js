@@ -495,6 +495,18 @@ document.getElementById("setupBtn").onclick = async () => {
   }
 };
 
+document.getElementById("showLogin").onclick = (e) => {
+  e.preventDefault();
+  document.getElementById("setupForm").classList.add("hidden");
+  document.getElementById("loginForm").classList.remove("hidden");
+};
+
+document.getElementById("showSetup").onclick = (e) => {
+  e.preventDefault();
+  document.getElementById("loginForm").classList.add("hidden");
+  document.getElementById("setupForm").classList.remove("hidden");
+};
+
 document.getElementById("loginBtn").onclick = async () => {
   const user = document.getElementById("loginUser").value.trim();
   const pass = document.getElementById("loginPass").value;
