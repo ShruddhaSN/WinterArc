@@ -25,6 +25,7 @@
         <input id="setupStartDate" type="date" />
         <button id="setupBtn" class="btn primary full">create & start my 90 days</button>
         <p id="setupError" class="error"></p>
+        <p class="hint" style="text-align:center;margin-top:10px;">already have an account? <a href="#" id="showLogin">log in</a></p>
       </div>
 
       <div id="loginForm" class="hidden">
@@ -33,6 +34,7 @@
         <input id="loginPass" type="password" placeholder="password" />
         <button id="loginBtn" class="btn primary full">unlock</button>
         <p id="loginError" class="error"></p>
+        <p class="hint" style="text-align:center;margin-top:10px;">new here? <a href="#" id="showSetup">sign up</a></p>
       </div>
     </div>
   </div>
@@ -50,6 +52,7 @@
             <div class="stat"><span id="streakVal">0</span><small>streak</small></div>
             <div class="stat"><span id="pointsVal">0</span><small>points</small></div>
             <button id="logoutBtn" class="btn secondary small" style="border-color:var(--ink-3); color:var(--ash);">log out</button>
+            <button id="resetBtn" class="btn secondary small" style="border-color:var(--clay); color:var(--clay);">reset goals</button>
           </div>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
