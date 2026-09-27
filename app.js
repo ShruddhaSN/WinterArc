@@ -1,52 +1,30 @@
-// ---------- IndexedDB setup ----------
-let db;
-const DB_NAME = "winterArcDB";
-const STORE = "goals";
+// ---------- Firestore-backed data layer (per-user, syncs across devices) ----------
+let currentUid = null;
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = (e) => {
-      const database = e.target.result;
-      if (!database.objectStoreNames.contains(STORE)) {
-        const store = database.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
-        store.createIndex("date", "date", { unique: false });
-      }
-    };
-    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
-    req.onerror = (e) => reject(e);
-  });
+function goalsRef() {
+  return firebase.firestore().collection("users").doc(currentUid).collection("goals");
+}
+function metaRef() {
+  return firebase.firestore().collection("users").doc(currentUid);
 }
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function addGoalRecord(goal) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const req = tx.objectStore(STORE).add(goal);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = (e) => reject(e);
-  });
+async function addGoalRecord(goal) {
+  const docRef = await goalsRef().add(goal);
+  return docRef.id;
 }
 
-function updateGoalRecord(goal) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const req = tx.objectStore(STORE).put(goal);
-    req.onsuccess = () => resolve();
-    req.onerror = (e) => reject(e);
-  });
+async function updateGoalRecord(goal) {
+  const { id, ...data } = goal;
+  await goalsRef().doc(id).set(data);
 }
 
-function getAllGoals() {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = (e) => reject(e);
-  });
+async function getAllGoals() {
+  const snap = await goalsRef().get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
 // ---------- Task descriptions (tap a goal to see what it actually means) ----------
@@ -176,7 +154,6 @@ function renderRoutine(routine) {
 async function render() {
   const all = await getAllGoals();
   const today = todayStr();
-  const creds = getCreds();
   const raw = rawDayNumber();
 
   // today's list (or a preview of day 1 if the arc hasn't started yet)
@@ -184,8 +161,8 @@ async function render() {
   const empty = document.getElementById("emptyState");
   list.innerHTML = "";
 
-  if (creds && raw < 1) {
-    const previewGoals = all.filter((g) => g.date === creds.startDate);
+  if (USER_START_DATE && raw < 1) {
+    const previewGoals = all.filter((g) => g.date === USER_START_DATE);
     empty.style.display = "none";
     document.getElementById("goalsHeading").textContent = "day 1 goals";
     const label = document.createElement("p");
@@ -373,9 +350,24 @@ document.getElementById("confirmProof").onclick = async () => {
 };
 
 function fileToDataUrl(file) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 900;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.6));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
@@ -469,32 +461,19 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-// ---------- Auth (client-side only — this is a local personal app, not a real backend) ----------
-const CREDS_KEY = "wa_creds";
-const SEEDED_KEY = "wa_seeded";
-const SESSION_KEY = "wa_session";
+// ---------- Auth (Firebase — real account, syncs across any device you log into) ----------
+let USER_START_DATE = null;
 
-async function sha256(text) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function getCreds() {
-  const raw = localStorage.getItem(CREDS_KEY);
-  return raw ? JSON.parse(raw) : null;
+function usernameToEmail(user) {
+  return `${user.toLowerCase().trim()}@winterarc.local`;
 }
 
 async function initAuth() {
-  const creds = getCreds();
-  if (!creds) {
-    document.getElementById("setupForm").classList.remove("hidden");
-    document.getElementById("loginForm").classList.add("hidden");
-    const dateInput = document.getElementById("setupStartDate");
-    dateInput.value = todayStr();
-  } else {
-    document.getElementById("setupForm").classList.add("hidden");
-    document.getElementById("loginForm").classList.remove("hidden");
-  }
+  document.getElementById("setupForm").classList.remove("hidden");
+  document.getElementById("loginForm").classList.add("hidden");
+  document.getElementById("setupStartDate").value = todayStr();
+  document.getElementById("authScreen").classList.remove("hidden");
+  document.getElementById("appScreen").classList.add("hidden");
 }
 
 document.getElementById("setupBtn").onclick = async () => {
@@ -503,39 +482,48 @@ document.getElementById("setupBtn").onclick = async () => {
   const pass2 = document.getElementById("setupPass2").value;
   const startDate = document.getElementById("setupStartDate").value;
   const errEl = document.getElementById("setupError");
+  errEl.textContent = "";
   if (!user || !pass || !startDate) { errEl.textContent = "fill in every field."; return; }
   if (pass !== pass2) { errEl.textContent = "passwords don't match."; return; }
-  const hash = await sha256(pass);
-  localStorage.setItem(CREDS_KEY, JSON.stringify({ user, hash, startDate }));
-  await unlockApp(startDate);
+  try {
+    const cred = await firebase.auth().createUserWithEmailAndPassword(usernameToEmail(user), pass);
+    currentUid = cred.user.uid;
+    await metaRef().set({ startDate, seeded: false, lastSpinWeek: 0, spinHistory: [] });
+    await unlockApp(startDate);
+  } catch (e) {
+    errEl.textContent = e.message.replace("Firebase: ", "");
+  }
 };
 
 document.getElementById("loginBtn").onclick = async () => {
   const user = document.getElementById("loginUser").value.trim();
   const pass = document.getElementById("loginPass").value;
   const errEl = document.getElementById("loginError");
-  const creds = getCreds();
-  const hash = await sha256(pass);
-  if (creds && creds.user === user && creds.hash === hash) {
-    await unlockApp(creds.startDate);
-  } else {
+  errEl.textContent = "";
+  try {
+    const cred = await firebase.auth().signInWithEmailAndPassword(usernameToEmail(user), pass);
+    currentUid = cred.user.uid;
+    const metaSnap = await metaRef().get();
+    const meta = metaSnap.data();
+    await unlockApp(meta.startDate);
+  } catch (e) {
     errEl.textContent = "wrong username or password.";
   }
 };
 
 async function unlockApp(startDate) {
+  USER_START_DATE = startDate;
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appScreen").classList.remove("hidden");
   await seedGoalsIfNeeded(startDate);
-  localStorage.setItem(SESSION_KEY, "1");
   drawWheel();
-  updateSpinUI();
+  await updateSpinUI();
   renderMilestones();
   render();
 }
 
-document.getElementById("logoutBtn").onclick = () => {
-  localStorage.removeItem(SESSION_KEY);
+document.getElementById("logoutBtn").onclick = async () => {
+  await firebase.auth().signOut();
   location.reload();
 };
 
@@ -617,9 +605,8 @@ function generateGoalsForDate(dayIndex, weekday) {
 }
 
 async function seedGoalsIfNeeded(startDate) {
-  if (localStorage.getItem(SEEDED_KEY)) return;
-  const all = await getAllGoals();
-  if (all.length > 0) { localStorage.setItem(SEEDED_KEY, "1"); return; }
+  const metaSnap = await metaRef().get();
+  if (metaSnap.data().seeded) return;
   for (let i = 0; i < 90; i++) {
     const d = addDays(startDate, i);
     const dateStr = d.toISOString().slice(0, 10);
@@ -629,7 +616,7 @@ async function seedGoalsIfNeeded(startDate) {
       await addGoalRecord({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null, routineKey: g.routineKey || null });
     }
   }
-  localStorage.setItem(SEEDED_KEY, "1");
+  await metaRef().update({ seeded: true });
 }
 
 // ---------- Rewards: spin wheel + milestones ----------
@@ -650,8 +637,6 @@ const MILESTONES = [
   { day: 60, text: "a day out doing something you actually want" },
   { day: 90, text: "the big one — whatever's been the real finish line" },
 ];
-const LAST_SPIN_KEY = "wa_lastSpin";
-const SPIN_HISTORY_KEY = "wa_spinHistory";
 const WHEEL_COLORS = ["#14182B", "#D9A441", "#4F7A5B", "#B25B3E", "#1D2242", "#DCE9DF", "#8B5E3C", "#9A9FBA", "#2E4F38", "#7A3A22"];
 
 function drawWheel() {
@@ -675,21 +660,22 @@ function completedWeeks(dayNum) {
   return dayNum > 0 ? Math.floor(dayNum / 7) : 0;
 }
 
-function canSpinThisWeek() {
+async function canSpinThisWeek() {
   const raw = rawDayNumber();
   if (raw < 1) return false; // arc hasn't started
-  const lastSpunWeek = Number(localStorage.getItem(LAST_SPIN_KEY) || 0);
-  return completedWeeks(raw) > lastSpunWeek;
+  const meta = (await metaRef().get()).data();
+  return completedWeeks(raw) > (meta.lastSpinWeek || 0);
 }
 
-function updateSpinUI() {
+async function updateSpinUI() {
   const hint = document.getElementById("spinHint");
   const btn = document.getElementById("spinBtn");
   const raw = rawDayNumber();
+  const meta = (await metaRef().get()).data();
   if (raw < 1) {
     hint.textContent = "unlocks once your first week of the arc is done";
     btn.disabled = true;
-  } else if (canSpinThisWeek()) {
+  } else if (completedWeeks(raw) > (meta.lastSpinWeek || 0)) {
     hint.textContent = `week ${completedWeeks(raw)} complete — available now`;
     btn.disabled = false;
   } else {
@@ -698,24 +684,24 @@ function updateSpinUI() {
     hint.textContent = `next spin in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
     btn.disabled = true;
   }
-  const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
+  const history = meta.spinHistory || [];
   document.getElementById("spinResult").textContent = history.length ? `last: ${history[history.length - 1].reward}` : "";
 }
 
-document.getElementById("spinBtn").onclick = () => {
-  if (!canSpinThisWeek()) return;
+document.getElementById("spinBtn").onclick = async () => {
+  if (!(await canSpinThisWeek())) return;
   const n = REWARDS.length;
   const winnerIndex = Math.floor(Math.random() * n);
   const slice = 360 / n;
   const targetAngle = 360 * 4 + (360 - (winnerIndex * slice + slice / 2));
   const canvas = document.getElementById("rewardWheel");
   canvas.style.transform = `rotate(${targetAngle}deg)`;
-  setTimeout(() => {
+  setTimeout(async () => {
     const reward = REWARDS[winnerIndex];
-    localStorage.setItem(LAST_SPIN_KEY, String(completedWeeks(rawDayNumber())));
-    const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
+    const meta = (await metaRef().get()).data();
+    const history = meta.spinHistory || [];
     history.push({ date: todayStr(), reward });
-    localStorage.setItem(SPIN_HISTORY_KEY, JSON.stringify(history));
+    await metaRef().update({ lastSpinWeek: completedWeeks(rawDayNumber()), spinHistory: history });
     document.getElementById("spinResult").textContent = `you got: ${reward}`;
     updateSpinUI();
   }, 4200);
@@ -735,19 +721,23 @@ function renderMilestones() {
 }
 
 // ---------- Init ----------
-openDB().then(async () => {
-  const creds = getCreds();
-  if (creds && localStorage.getItem(SESSION_KEY)) {
-    await unlockApp(creds.startDate);
+firebase.auth().onAuthStateChanged(async (user) => {
+  if (user) {
+    currentUid = user.uid;
+    const metaSnap = await metaRef().get();
+    if (metaSnap.exists) {
+      await unlockApp(metaSnap.data().startDate);
+    } else {
+      await initAuth();
+    }
   } else {
     await initAuth();
   }
 });
 
 function rawDayNumber() {
-  const creds = getCreds();
-  if (!creds) return 1;
-  const start = new Date(creds.startDate + "T00:00:00");
+  if (!USER_START_DATE) return 1;
+  const start = new Date(USER_START_DATE + "T00:00:00");
   const now = new Date();
   return Math.floor((now - start) / 86400000) + 1;
 }
@@ -757,13 +747,12 @@ function currentDayNumber() {
 }
 
 function updateDayline() {
-  const creds = getCreds();
-  if (!creds) return;
+  if (!USER_START_DATE) return;
   const raw = rawDayNumber();
   const dayline = document.getElementById("dayline");
   const fill = document.getElementById("progressFill");
   if (raw < 1) {
-    dayline.textContent = `starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} (${creds.startDate})`;
+    dayline.textContent = `starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} (${USER_START_DATE})`;
     fill.style.width = "0%";
   } else {
     const clamped = Math.min(90, raw);
