@@ -515,16 +515,33 @@ async function unlockApp(startDate) {
   USER_START_DATE = startDate;
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appScreen").classList.remove("hidden");
-  await seedGoalsIfNeeded(startDate);
-  drawWheel();
-  await updateSpinUI();
-  renderMilestones();
-  render();
+  try {
+    await seedGoalsIfNeeded(startDate);
+    drawWheel();
+    await updateSpinUI();
+    renderMilestones();
+    await render();
+  } catch (e) {
+    console.error("unlockApp failed:", e);
+    document.getElementById("goalsHeading").textContent = "something went wrong";
+    document.getElementById("emptyState").textContent = "error: " + e.message + " — check the browser console for details.";
+    document.getElementById("emptyState").style.display = "block";
+  }
 }
 
 document.getElementById("logoutBtn").onclick = async () => {
   await firebase.auth().signOut();
   location.reload();
+};
+
+document.getElementById("resetBtn").onclick = async () => {
+  if (!confirm("Delete all your goals and re-seed the 90-day plan fresh? Proof photos and history will be lost.")) return;
+  const snap = await goalsRef().get();
+  const batchDeletes = snap.docs.map((d) => goalsRef().doc(d.id).delete());
+  await Promise.all(batchDeletes);
+  await metaRef().update({ seeded: false, lastSpinWeek: 0, spinHistory: [] });
+  await seedGoalsIfNeeded(USER_START_DATE);
+  render();
 };
 
 // ---------- 90-day pre-fed goal plan ----------
@@ -606,16 +623,39 @@ function generateGoalsForDate(dayIndex, weekday) {
 
 async function seedGoalsIfNeeded(startDate) {
   const metaSnap = await metaRef().get();
-  if (metaSnap.data().seeded) return;
+  if (metaSnap.exists && metaSnap.data().seeded) return;
+  const existing = await goalsRef().limit(1).get();
+  if (!existing.empty) {
+    // goals already exist (e.g. from an interrupted earlier attempt) — don't duplicate, just mark seeded
+    await metaRef().set({ startDate, seeded: true, lastSpinWeek: 0, spinHistory: [] }, { merge: true });
+    return;
+  }
+  if (!metaSnap.exists) {
+    await metaRef().set({ startDate, seeded: false, lastSpinWeek: 0, spinHistory: [] });
+  }
+
+  // Build all 90 days' goals first, then write them in fast batches
+  // (one-by-one writes took 400+ round-trips and could take a minute+,
+  // which looked broken and tempted a mid-seed refresh — causing duplicates).
+  const allGoals = [];
   for (let i = 0; i < 90; i++) {
     const d = addDays(startDate, i);
     const dateStr = d.toISOString().slice(0, 10);
     const weekday = d.getDay();
-    const goals = generateGoalsForDate(i, weekday);
-    for (const g of goals) {
-      await addGoalRecord({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null, routineKey: g.routineKey || null });
-    }
+    generateGoalsForDate(i, weekday).forEach((g) => {
+      allGoals.push({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null, routineKey: g.routineKey || null });
+    });
   }
+
+  const CHUNK = 400; // stay under Firestore's 500-writes-per-batch limit
+  for (let start = 0; start < allGoals.length; start += CHUNK) {
+    const batch = firebase.firestore().batch();
+    allGoals.slice(start, start + CHUNK).forEach((g) => {
+      batch.set(goalsRef().doc(), g);
+    });
+    await batch.commit();
+  }
+
   await metaRef().update({ seeded: true });
 }
 
