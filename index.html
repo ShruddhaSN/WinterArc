@@ -81,10 +81,12 @@
 
         <section class="card">
           <div class="card-head">
-            <h2 id="tomorrowHeading">tomorrow's goals</h2>
+            <button id="peekPrev" class="btn secondary small" aria-label="previous day">&lt;</button>
+            <h2 id="peekHeading" style="flex:1; text-align:center;">tomorrow</h2>
+            <button id="peekNext" class="btn secondary small" aria-label="next day">&gt;</button>
           </div>
-          <div id="tomorrowList" class="goal-list"></div>
-          <p id="tomorrowEmpty" class="empty hidden">nothing planned for tomorrow.</p>
+          <div id="peekList" class="goal-list"></div>
+          <p id="peekEmpty" class="empty hidden">nothing planned for this day.</p>
         </section>
 
         <section class="card">
