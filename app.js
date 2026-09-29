@@ -1,30 +1,86 @@
-// ---------- Firestore-backed data layer (per-user, syncs across devices) ----------
-let currentUid = null;
+// ---------- IndexedDB setup ----------
+let db;
+const DB_NAME = "winterArcDB";
+const STORE = "goals";
 
-function goalsRef() {
-  return firebase.firestore().collection("users").doc(currentUid).collection("goals");
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const database = e.target.result;
+      if (!database.objectStoreNames.contains(STORE)) {
+        const store = database.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
+        store.createIndex("date", "date", { unique: false });
+      }
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror = (e) => reject(e);
+  });
 }
-function metaRef() {
-  return firebase.firestore().collection("users").doc(currentUid);
-}
+
+// ---------- Date helpers: everything is a plain LOCAL calendar date (never UTC) ----------
+function pad2(n) { return String(n).padStart(2, "0"); }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-async function addGoalRecord(goal) {
-  const docRef = await goalsRef().add(goal);
-  return docRef.id;
+// add n days to a "YYYY-MM-DD" string (pure calendar maths, no timezone involved)
+function shiftDateStr(s, n) {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
-async function updateGoalRecord(goal) {
-  const { id, ...data } = goal;
-  await goalsRef().doc(id).set(data);
+// whole days from date a to date b
+function daysBetween(a, b) {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
 }
 
-async function getAllGoals() {
-  const snap = await goalsRef().get();
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+// 0 = Sunday ... 6 = Saturday
+function weekdayOf(s) {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+function addGoalRecord(goal) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const req = tx.objectStore(STORE).add(goal);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e);
+  });
+}
+
+// writes many goals in ONE transaction — all-or-nothing, so an interrupted refresh can't leave half a plan
+function addManyGoalRecords(list) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    list.forEach((g) => store.add(g));
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e);
+  });
+}
+
+function updateGoalRecord(goal) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const req = tx.objectStore(STORE).put(goal);
+    req.onsuccess = () => resolve();
+    req.onerror = (e) => reject(e);
+  });
+}
+
+function getAllGoals() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = (e) => reject(e);
+  });
 }
 
 // ---------- Task descriptions (tap a goal to see what it actually means) ----------
@@ -161,8 +217,9 @@ async function render() {
   const empty = document.getElementById("emptyState");
   list.innerHTML = "";
 
-  if (USER_START_DATE && raw < 1) {
-    const previewGoals = all.filter((g) => g.date === USER_START_DATE);
+  const creds = getCreds();
+  if (creds && raw < 1) {
+    const previewGoals = all.filter((g) => g.date === creds.startDate);
     empty.style.display = "none";
     document.getElementById("goalsHeading").textContent = "day 1 goals";
     const label = document.createElement("p");
@@ -182,12 +239,26 @@ async function render() {
     }
   }
 
+  // tomorrow's list — fully interactive, so you can get ahead if you want to
+  const viewDate = (creds && raw < 1) ? creds.startDate : today;
+  const tomorrowDate = shiftDateStr(viewDate, 1);
+  const tomorrowList = document.getElementById("tomorrowList");
+  const tomorrowEmpty = document.getElementById("tomorrowEmpty");
+  const tomorrowHeading = document.getElementById("tomorrowHeading");
+  tomorrowHeading.textContent = (creds && raw < 1) ? "day 2 goals" : "tomorrow's goals";
+  tomorrowList.innerHTML = "";
+  const tomorrowGoals = all.filter((g) => g.date === tomorrowDate);
+  if (tomorrowGoals.length === 0) {
+    tomorrowEmpty.classList.remove("hidden");
+  } else {
+    tomorrowEmpty.classList.add("hidden");
+    tomorrowGoals.forEach((g) => tomorrowList.appendChild(renderGoalItem(g, true)));
+  }
+
   // catch-up: past goals never touched — capped to last 7 days so it can't pile up indefinitely
   const catchupCard = document.getElementById("catchupCard");
   const catchupList = document.getElementById("catchupList");
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const cutoff = sevenDaysAgo.toISOString().slice(0, 10);
+  const cutoff = shiftDateStr(today, -7);
   const pastPending = all.filter((g) => g.date < today && g.date >= cutoff && g.status === "pending");
   catchupList.innerHTML = "";
   if (pastPending.length > 0) {
@@ -255,6 +326,8 @@ function renderGoalItem(g, preview, catchup) {
       actions.appendChild(makeIconBtn("⏭", "icon-btn postpone-btn", "postpone", () => setStatus(g, "postponed")));
     }
     actions.appendChild(makeIconBtn("✕", "icon-btn skip-btn", "skip", () => openProofModal(g, "skipped")));
+  } else if (!preview) {
+    actions.appendChild(makeIconBtn("↺", "icon-btn edit-btn", "change status", () => setStatus(g, "pending")));
   }
   return div;
 }
@@ -283,25 +356,19 @@ function computePoints(all) {
 
 function computeStreak(all) {
   const doneDates = new Set(all.filter((g) => g.status === "done").map((g) => g.date));
+  let key = todayStr();
+  if (!doneDates.has(key)) key = shiftDateStr(key, -1); // today not done yet — don't wipe the streak each morning
   let streak = 0;
-  let d = new Date();
-  while (true) {
-    const key = d.toISOString().slice(0, 10);
-    if (doneDates.has(key)) {
-      streak++;
-      d.setDate(d.getDate() - 1);
-    } else {
-      break;
-    }
+  while (doneDates.has(key)) {
+    streak++;
+    key = shiftDateStr(key, -1);
   }
   return streak;
 }
 
 document.getElementById("clearCatchupBtn").onclick = async () => {
   const today = todayStr();
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const cutoff = sevenDaysAgo.toISOString().slice(0, 10);
+  const cutoff = shiftDateStr(today, -7);
   const all = await getAllGoals();
   const pastPending = all.filter((g) => g.date < today && g.date >= cutoff && g.status === "pending");
   for (const g of pastPending) {
@@ -461,19 +528,32 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-// ---------- Auth (Firebase — real account, syncs across any device you log into) ----------
-let USER_START_DATE = null;
+// ---------- Auth (stored on this device only) ----------
+const CREDS_KEY = "wa_creds";
+const SEEDED_KEY = "wa_seeded";
+const SESSION_KEY = "wa_session";
+const DATEFIX_KEY = "wa_datefix_v1";
 
-function usernameToEmail(user) {
-  return `${user.toLowerCase().trim()}@winterarc.local`;
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function getCreds() {
+  const raw = localStorage.getItem(CREDS_KEY);
+  return raw ? JSON.parse(raw) : null;
 }
 
 async function initAuth() {
-  document.getElementById("setupForm").classList.remove("hidden");
-  document.getElementById("loginForm").classList.add("hidden");
-  document.getElementById("setupStartDate").value = todayStr();
-  document.getElementById("authScreen").classList.remove("hidden");
-  document.getElementById("appScreen").classList.add("hidden");
+  const creds = getCreds();
+  if (!creds) {
+    document.getElementById("setupForm").classList.remove("hidden");
+    document.getElementById("loginForm").classList.add("hidden");
+    document.getElementById("setupStartDate").value = todayStr();
+  } else {
+    document.getElementById("setupForm").classList.add("hidden");
+    document.getElementById("loginForm").classList.remove("hidden");
+  }
 }
 
 document.getElementById("setupBtn").onclick = async () => {
@@ -482,87 +562,74 @@ document.getElementById("setupBtn").onclick = async () => {
   const pass2 = document.getElementById("setupPass2").value;
   const startDate = document.getElementById("setupStartDate").value;
   const errEl = document.getElementById("setupError");
-  errEl.textContent = "";
   if (!user || !pass || !startDate) { errEl.textContent = "fill in every field."; return; }
   if (pass !== pass2) { errEl.textContent = "passwords don't match."; return; }
-  try {
-    const cred = await firebase.auth().createUserWithEmailAndPassword(usernameToEmail(user), pass);
-    currentUid = cred.user.uid;
-    await metaRef().set({ startDate, seeded: false, lastSpinWeek: 0, spinHistory: [] });
-    await unlockApp(startDate);
-  } catch (e) {
-    errEl.textContent = e.message.replace("Firebase: ", "");
-  }
-};
-
-document.getElementById("showLogin").onclick = (e) => {
-  e.preventDefault();
-  document.getElementById("setupForm").classList.add("hidden");
-  document.getElementById("loginForm").classList.remove("hidden");
-};
-
-document.getElementById("showSetup").onclick = (e) => {
-  e.preventDefault();
-  document.getElementById("loginForm").classList.add("hidden");
-  document.getElementById("setupForm").classList.remove("hidden");
+  const hash = await sha256(pass);
+  localStorage.setItem(CREDS_KEY, JSON.stringify({ user, hash, startDate }));
+  await unlockApp(startDate);
 };
 
 document.getElementById("loginBtn").onclick = async () => {
   const user = document.getElementById("loginUser").value.trim();
   const pass = document.getElementById("loginPass").value;
   const errEl = document.getElementById("loginError");
-  errEl.textContent = "";
-  try {
-    const cred = await firebase.auth().signInWithEmailAndPassword(usernameToEmail(user), pass);
-    currentUid = cred.user.uid;
-    const metaSnap = await metaRef().get();
-    const meta = metaSnap.data();
-    await unlockApp(meta.startDate);
-  } catch (e) {
+  const creds = getCreds();
+  const hash = await sha256(pass);
+  if (creds && creds.user === user && creds.hash === hash) {
+    await unlockApp(creds.startDate);
+  } else {
     errEl.textContent = "wrong username or password.";
   }
 };
 
+// One-time repair: an earlier version saved each day's date one day too early
+// (it converted local midnight to UTC). If the saved plan starts a day before
+// the chosen start date, shift everything forward by that one day.
+async function fixShiftedDatesIfNeeded(startDate) {
+  if (localStorage.getItem(DATEFIX_KEY)) return;
+  const all = await getAllGoals();
+  if (all.length > 0) {
+    // plan days hold 3-5 goals each; a stray one-off "extra" goal sits alone on its day
+    const counts = {};
+    all.forEach((g) => { counts[g.date] = (counts[g.date] || 0) + 1; });
+    const planDates = new Set(Object.keys(counts).filter((d) => counts[d] >= 3));
+    const planStart = Array.from(planDates).sort()
+      .find((d) => [1, 2, 3, 4, 5, 6].every((k) => planDates.has(shiftDateStr(d, k))));
+    if (planStart && daysBetween(planStart, startDate) === 1) {
+      for (const g of all) {
+        g.date = shiftDateStr(g.date, 1);
+        await updateGoalRecord(g);
+      }
+    }
+  }
+  localStorage.setItem(DATEFIX_KEY, "1");
+}
+
 async function unlockApp(startDate) {
-  USER_START_DATE = startDate;
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appScreen").classList.remove("hidden");
   try {
+    await fixShiftedDatesIfNeeded(startDate);
     await seedGoalsIfNeeded(startDate);
+    localStorage.setItem(SESSION_KEY, "1");
     drawWheel();
-    await updateSpinUI();
+    updateSpinUI();
     renderMilestones();
     await render();
   } catch (e) {
     console.error("unlockApp failed:", e);
     document.getElementById("goalsHeading").textContent = "something went wrong";
-    document.getElementById("emptyState").textContent = "error: " + e.message + " — check the browser console for details.";
+    document.getElementById("emptyState").textContent = "error: " + e.message;
     document.getElementById("emptyState").style.display = "block";
   }
 }
 
-document.getElementById("logoutBtn").onclick = async () => {
-  await firebase.auth().signOut();
+document.getElementById("logoutBtn").onclick = () => {
+  localStorage.removeItem(SESSION_KEY);
   location.reload();
 };
 
-document.getElementById("resetBtn").onclick = async () => {
-  if (!confirm("Delete all your goals and re-seed the 90-day plan fresh? Proof photos and history will be lost.")) return;
-  const snap = await goalsRef().get();
-  const batchDeletes = snap.docs.map((d) => goalsRef().doc(d.id).delete());
-  await Promise.all(batchDeletes);
-  await metaRef().update({ seeded: false, lastSpinWeek: 0, spinHistory: [] });
-  await seedGoalsIfNeeded(USER_START_DATE);
-  render();
-};
-
 // ---------- 90-day pre-fed goal plan ----------
-function addDays(dateStr, n) {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
 function walkTargetForDay(dayIndex) {
   const stage = Math.floor(dayIndex / 14); // step up every 2 weeks
   return Math.min(20, 3 + stage * 2);
@@ -634,41 +701,20 @@ function generateGoalsForDate(dayIndex, weekday) {
 }
 
 async function seedGoalsIfNeeded(startDate) {
-  const metaSnap = await metaRef().get();
-  if (metaSnap.exists && metaSnap.data().seeded) return;
-  const existing = await goalsRef().limit(1).get();
-  if (!existing.empty) {
-    // goals already exist (e.g. from an interrupted earlier attempt) — don't duplicate, just mark seeded
-    await metaRef().set({ startDate, seeded: true, lastSpinWeek: 0, spinHistory: [] }, { merge: true });
-    return;
-  }
-  if (!metaSnap.exists) {
-    await metaRef().set({ startDate, seeded: false, lastSpinWeek: 0, spinHistory: [] });
-  }
-
-  // Build all 90 days' goals first, then write them in fast batches
-  // (one-by-one writes took 400+ round-trips and could take a minute+,
-  // which looked broken and tempted a mid-seed refresh — causing duplicates).
-  const allGoals = [];
+  if (localStorage.getItem(SEEDED_KEY)) return;
+  const existing = await getAllGoals();
+  if (existing.length > 0) { localStorage.setItem(SEEDED_KEY, "1"); return; }
+  const list = [];
   for (let i = 0; i < 90; i++) {
-    const d = addDays(startDate, i);
-    const dateStr = d.toISOString().slice(0, 10);
-    const weekday = d.getDay();
+    const dateStr = shiftDateStr(startDate, i);
+    const weekday = weekdayOf(dateStr);
     generateGoalsForDate(i, weekday).forEach((g) => {
-      allGoals.push({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null, routineKey: g.routineKey || null });
+      list.push({ date: dateStr, text: g.text, needsProof: g.needsProof, status: "pending", proof: null, routineKey: g.routineKey || null });
     });
   }
-
-  const CHUNK = 400; // stay under Firestore's 500-writes-per-batch limit
-  for (let start = 0; start < allGoals.length; start += CHUNK) {
-    const batch = firebase.firestore().batch();
-    allGoals.slice(start, start + CHUNK).forEach((g) => {
-      batch.set(goalsRef().doc(), g);
-    });
-    await batch.commit();
-  }
-
-  await metaRef().update({ seeded: true });
+  await addManyGoalRecords(list);
+  localStorage.setItem(SEEDED_KEY, "1");
+  localStorage.setItem(DATEFIX_KEY, "1");
 }
 
 // ---------- Rewards: spin wheel + milestones ----------
@@ -708,26 +754,28 @@ function drawWheel() {
   }
 }
 
+const LAST_SPIN_KEY = "wa_lastSpin";       // number of the last week that was spun for
+const SPIN_HISTORY_KEY = "wa_spinHistory";
+
 function completedWeeks(dayNum) {
   return dayNum > 0 ? Math.floor(dayNum / 7) : 0;
 }
 
-async function canSpinThisWeek() {
+function canSpinThisWeek() {
   const raw = rawDayNumber();
   if (raw < 1) return false; // arc hasn't started
-  const meta = (await metaRef().get()).data();
-  return completedWeeks(raw) > (meta.lastSpinWeek || 0);
+  const lastSpunWeek = Number(localStorage.getItem(LAST_SPIN_KEY) || 0);
+  return completedWeeks(raw) > lastSpunWeek;
 }
 
-async function updateSpinUI() {
+function updateSpinUI() {
   const hint = document.getElementById("spinHint");
   const btn = document.getElementById("spinBtn");
   const raw = rawDayNumber();
-  const meta = (await metaRef().get()).data();
   if (raw < 1) {
     hint.textContent = "unlocks once your first week of the arc is done";
     btn.disabled = true;
-  } else if (completedWeeks(raw) > (meta.lastSpinWeek || 0)) {
+  } else if (canSpinThisWeek()) {
     hint.textContent = `week ${completedWeeks(raw)} complete — available now`;
     btn.disabled = false;
   } else {
@@ -736,24 +784,24 @@ async function updateSpinUI() {
     hint.textContent = `next spin in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
     btn.disabled = true;
   }
-  const history = meta.spinHistory || [];
+  const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
   document.getElementById("spinResult").textContent = history.length ? `last: ${history[history.length - 1].reward}` : "";
 }
 
-document.getElementById("spinBtn").onclick = async () => {
-  if (!(await canSpinThisWeek())) return;
+document.getElementById("spinBtn").onclick = () => {
+  if (!canSpinThisWeek()) return;
   const n = REWARDS.length;
   const winnerIndex = Math.floor(Math.random() * n);
   const slice = 360 / n;
   const targetAngle = 360 * 4 + (360 - (winnerIndex * slice + slice / 2));
   const canvas = document.getElementById("rewardWheel");
   canvas.style.transform = `rotate(${targetAngle}deg)`;
-  setTimeout(async () => {
+  setTimeout(() => {
     const reward = REWARDS[winnerIndex];
-    const meta = (await metaRef().get()).data();
-    const history = meta.spinHistory || [];
+    localStorage.setItem(LAST_SPIN_KEY, String(completedWeeks(rawDayNumber())));
+    const history = JSON.parse(localStorage.getItem(SPIN_HISTORY_KEY) || "[]");
     history.push({ date: todayStr(), reward });
-    await metaRef().update({ lastSpinWeek: completedWeeks(rawDayNumber()), spinHistory: history });
+    localStorage.setItem(SPIN_HISTORY_KEY, JSON.stringify(history));
     document.getElementById("spinResult").textContent = `you got: ${reward}`;
     updateSpinUI();
   }, 4200);
@@ -773,25 +821,10 @@ function renderMilestones() {
 }
 
 // ---------- Init ----------
-firebase.auth().onAuthStateChanged(async (user) => {
-  if (user) {
-    currentUid = user.uid;
-    const metaSnap = await metaRef().get();
-    if (metaSnap.exists) {
-      await unlockApp(metaSnap.data().startDate);
-    } else {
-      await initAuth();
-    }
-  } else {
-    await initAuth();
-  }
-});
-
 function rawDayNumber() {
-  if (!USER_START_DATE) return 1;
-  const start = new Date(USER_START_DATE + "T00:00:00");
-  const now = new Date();
-  return Math.floor((now - start) / 86400000) + 1;
+  const creds = getCreds();
+  if (!creds) return 1;
+  return daysBetween(creds.startDate, todayStr()) + 1;
 }
 
 function currentDayNumber() {
@@ -799,12 +832,13 @@ function currentDayNumber() {
 }
 
 function updateDayline() {
-  if (!USER_START_DATE) return;
+  const creds = getCreds();
+  if (!creds) return;
   const raw = rawDayNumber();
   const dayline = document.getElementById("dayline");
   const fill = document.getElementById("progressFill");
   if (raw < 1) {
-    dayline.textContent = `starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} (${USER_START_DATE})`;
+    dayline.textContent = `starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} (${creds.startDate})`;
     fill.style.width = "0%";
   } else {
     const clamped = Math.min(90, raw);
@@ -820,6 +854,15 @@ render = async function () {
   renderMilestones();
   updateSpinUI();
 };
+
+openDB().then(async () => {
+  const creds = getCreds();
+  if (creds && localStorage.getItem(SESSION_KEY)) {
+    await unlockApp(creds.startDate);
+  } else {
+    await initAuth();
+  }
+});
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js").catch(() => {});
