@@ -173,6 +173,8 @@ main {
 .icon-btn.done-btn:hover, .icon-btn.done-btn.active { background: var(--moss-bg); border-color: var(--moss); color: var(--moss); }
 .icon-btn.postpone-btn:hover { background: #F5EBD6; border-color: var(--gold); color: var(--gold-dim); }
 .icon-btn.skip-btn:hover { background: var(--clay-bg); border-color: var(--clay); color: var(--clay); }
+.icon-btn.edit-btn { color: var(--gold-dim); }
+.icon-btn.edit-btn:hover { background: #F5EBD6; border-color: var(--gold); }
 
 .empty { color: var(--text-dim); font-size: 13.5px; margin: 6px 0; line-height: 1.6; }
 
