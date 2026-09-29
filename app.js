@@ -1,5 +1,6 @@
 // ---------- IndexedDB setup ----------
 let db;
+let peekOffset = null; // day-peek navigation state, relative to today (1 = tomorrow, -1 = yesterday, etc.)
 const DB_NAME = "winterArcDB";
 const STORE = "goals";
 
@@ -239,20 +240,32 @@ async function render() {
     }
   }
 
-  // tomorrow's list — fully interactive, so you can get ahead if you want to
+  // day peek — navigable sneak-peek, view-only, defaults to tomorrow, clamped to the 90-day plan
   const viewDate = (creds && raw < 1) ? creds.startDate : today;
-  const tomorrowDate = shiftDateStr(viewDate, 1);
-  const tomorrowList = document.getElementById("tomorrowList");
-  const tomorrowEmpty = document.getElementById("tomorrowEmpty");
-  const tomorrowHeading = document.getElementById("tomorrowHeading");
-  tomorrowHeading.textContent = (creds && raw < 1) ? "day 2 goals" : "tomorrow's goals";
-  tomorrowList.innerHTML = "";
-  const tomorrowGoals = all.filter((g) => g.date === tomorrowDate);
-  if (tomorrowGoals.length === 0) {
-    tomorrowEmpty.classList.remove("hidden");
-  } else {
-    tomorrowEmpty.classList.add("hidden");
-    tomorrowGoals.forEach((g) => tomorrowList.appendChild(renderGoalItem(g, true)));
+  if (creds && peekOffset === null) peekOffset = 1; // first render: default to tomorrow
+  if (creds) {
+    const planStart = creds.startDate;
+    const planEnd = shiftDateStr(planStart, 89);
+    let peekDate = shiftDateStr(viewDate, peekOffset);
+    if (peekDate < planStart) { peekOffset = daysBetween(viewDate, planStart); peekDate = planStart; }
+    if (peekDate > planEnd) { peekOffset = daysBetween(viewDate, planEnd); peekDate = planEnd; }
+
+    const peekList = document.getElementById("peekList");
+    const peekEmpty = document.getElementById("peekEmpty");
+    const peekHeading = document.getElementById("peekHeading");
+    const dayLabel = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayOf(peekDate)];
+    peekHeading.textContent = peekOffset === 1 ? "tomorrow" : peekOffset === -1 ? "yesterday" : `${dayLabel}, ${peekDate}`;
+    document.getElementById("peekPrev").disabled = peekDate <= planStart;
+    document.getElementById("peekNext").disabled = peekDate >= planEnd;
+
+    peekList.innerHTML = "";
+    const peekGoals = all.filter((g) => g.date === peekDate);
+    if (peekGoals.length === 0) {
+      peekEmpty.classList.remove("hidden");
+    } else {
+      peekEmpty.classList.add("hidden");
+      peekGoals.forEach((g) => peekList.appendChild(renderGoalItem(g, true)));
+    }
   }
 
   // catch-up: past goals never touched — capped to last 7 days so it can't pile up indefinitely
@@ -365,6 +378,9 @@ function computeStreak(all) {
   }
   return streak;
 }
+
+document.getElementById("peekPrev").onclick = () => { peekOffset -= 1; render(); };
+document.getElementById("peekNext").onclick = () => { peekOffset += 1; render(); };
 
 document.getElementById("clearCatchupBtn").onclick = async () => {
   const today = todayStr();
