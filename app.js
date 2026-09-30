@@ -1,6 +1,6 @@
 // ---------- IndexedDB setup ----------
 let db;
-let peekOffset = null; // day-peek navigation state, relative to today (1 = tomorrow, -1 = yesterday, etc.)
+let dayOffset = null; // day-peek navigation state, relative to today (1 = tomorrow, -1 = yesterday, etc.)
 const DB_NAME = "winterArcDB";
 const STORE = "goals";
 
@@ -212,59 +212,54 @@ async function render() {
   const all = await getAllGoals();
   const today = todayStr();
   const raw = rawDayNumber();
+  const creds = getCreds();
 
-  // today's list (or a preview of day 1 if the arc hasn't started yet)
   const list = document.getElementById("goalList");
   const empty = document.getElementById("emptyState");
+  const heading = document.getElementById("goalsHeading");
+  const addBtn = document.getElementById("addGoalBtn");
   list.innerHTML = "";
+  empty.textContent = "nothing planned for this day.";
+  empty.style.display = "none";
 
-  const creds = getCreds();
-  if (creds && raw < 1) {
-    const previewGoals = all.filter((g) => g.date === creds.startDate);
-    empty.style.display = "none";
-    document.getElementById("goalsHeading").textContent = "day 1 goals";
-    const label = document.createElement("p");
-    label.className = "hint";
-    label.style.marginBottom = "8px";
-    label.textContent = `arc starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} — here's a peek:`;
-    list.appendChild(label);
-    previewGoals.forEach((g) => list.appendChild(renderGoalItem(g, true)));
-  } else {
-    document.getElementById("goalsHeading").textContent = "today's goals";
-    const todaysGoals = all.filter((g) => g.date === today);
-    if (todaysGoals.length === 0) {
-      empty.style.display = "block";
-    } else {
-      empty.style.display = "none";
-      todaysGoals.forEach((g) => list.appendChild(renderGoalItem(g)));
-    }
-  }
-
-  // day peek — navigable sneak-peek, view-only, defaults to tomorrow, clamped to the 90-day plan
-  const viewDate = (creds && raw < 1) ? creds.startDate : today;
-  if (creds && peekOffset === null) peekOffset = 1; // first render: default to tomorrow
   if (creds) {
+    if (dayOffset === null) dayOffset = 0; // first render: land on today
+    const anchor = raw < 1 ? creds.startDate : today; // "day 0" reference point
     const planStart = creds.startDate;
     const planEnd = shiftDateStr(planStart, 89);
-    let peekDate = shiftDateStr(viewDate, peekOffset);
-    if (peekDate < planStart) { peekOffset = daysBetween(viewDate, planStart); peekDate = planStart; }
-    if (peekDate > planEnd) { peekOffset = daysBetween(viewDate, planEnd); peekDate = planEnd; }
+    let displayedDate = shiftDateStr(anchor, dayOffset);
+    if (displayedDate < planStart) { dayOffset = daysBetween(anchor, planStart); displayedDate = planStart; }
+    if (displayedDate > planEnd) { dayOffset = daysBetween(anchor, planEnd); displayedDate = planEnd; }
 
-    const peekList = document.getElementById("peekList");
-    const peekEmpty = document.getElementById("peekEmpty");
-    const peekHeading = document.getElementById("peekHeading");
-    const dayLabel = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayOf(peekDate)];
-    peekHeading.textContent = peekOffset === 1 ? "tomorrow" : peekOffset === -1 ? "yesterday" : `${dayLabel}, ${peekDate}`;
-    document.getElementById("peekPrev").disabled = peekDate <= planStart;
-    document.getElementById("peekNext").disabled = peekDate >= planEnd;
+    const isRealToday = dayOffset === 0 && raw >= 1;
+    document.getElementById("dayPrev").disabled = displayedDate <= planStart;
+    document.getElementById("dayNext").disabled = displayedDate >= planEnd;
+    addBtn.classList.toggle("hidden", !isRealToday);
 
-    peekList.innerHTML = "";
-    const peekGoals = all.filter((g) => g.date === peekDate);
-    if (peekGoals.length === 0) {
-      peekEmpty.classList.remove("hidden");
+    if (dayOffset === 0) {
+      heading.textContent = raw < 1 ? "day 1 goals" : "today's goals";
+    } else if (dayOffset === 1) {
+      heading.textContent = "tomorrow";
+    } else if (dayOffset === -1) {
+      heading.textContent = "yesterday";
     } else {
-      peekEmpty.classList.add("hidden");
-      peekGoals.forEach((g) => peekList.appendChild(renderGoalItem(g, true)));
+      const dayLabel = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][weekdayOf(displayedDate)];
+      heading.textContent = `${dayLabel}, ${displayedDate}`;
+    }
+
+    if (dayOffset === 0 && raw < 1) {
+      const label = document.createElement("p");
+      label.className = "hint";
+      label.style.marginBottom = "8px";
+      label.textContent = `arc starts in ${1 - raw} day${1 - raw === 1 ? "" : "s"} — here's a peek:`;
+      list.appendChild(label);
+    }
+
+    const dayGoals = all.filter((g) => g.date === displayedDate);
+    if (dayGoals.length === 0) {
+      empty.style.display = "block";
+    } else {
+      dayGoals.forEach((g) => list.appendChild(renderGoalItem(g, !isRealToday)));
     }
   }
 
@@ -379,8 +374,8 @@ function computeStreak(all) {
   return streak;
 }
 
-document.getElementById("peekPrev").onclick = () => { peekOffset -= 1; render(); };
-document.getElementById("peekNext").onclick = () => { peekOffset += 1; render(); };
+document.getElementById("dayPrev").onclick = () => { dayOffset -= 1; render(); };
+document.getElementById("dayNext").onclick = () => { dayOffset += 1; render(); };
 
 document.getElementById("clearCatchupBtn").onclick = async () => {
   const today = todayStr();
@@ -411,22 +406,39 @@ document.getElementById("confirmAdd").onclick = async () => {
 // ---------- Proof modal ----------
 let pendingGoal = null;
 let pendingStatus = null;
+let selectedProofFile = null;
 const proofModal = document.getElementById("proofModal");
 
 function openProofModal(goal, status) {
   pendingGoal = goal;
   pendingStatus = status;
+  selectedProofFile = null;
   document.getElementById("proofTitle").textContent =
     status === "done" ? "mark as done" : "mark as skipped (that's ok too)";
-  document.getElementById("proofFile").value = "";
+  document.getElementById("proofFileCamera").value = "";
+  document.getElementById("proofFileGallery").value = "";
+  document.getElementById("proofFileName").textContent = "";
   proofModal.classList.remove("hidden");
 }
 document.getElementById("cancelProof").onclick = () => proofModal.classList.add("hidden");
+
+document.getElementById("proofCameraBtn").onclick = () => document.getElementById("proofFileCamera").click();
+document.getElementById("proofGalleryBtn").onclick = () => document.getElementById("proofFileGallery").click();
+
+function handleProofFileChosen(e) {
+  const file = e.target.files && e.target.files[0];
+  if (file) {
+    selectedProofFile = file;
+    document.getElementById("proofFileName").textContent = `selected: ${file.name}`;
+  }
+}
+document.getElementById("proofFileCamera").onchange = handleProofFileChosen;
+document.getElementById("proofFileGallery").onchange = handleProofFileChosen;
+
 document.getElementById("confirmProof").onclick = async () => {
-  const fileInput = document.getElementById("proofFile");
   let proofDataUrl = null;
-  if (fileInput.files && fileInput.files[0]) {
-    proofDataUrl = await fileToDataUrl(fileInput.files[0]);
+  if (selectedProofFile) {
+    proofDataUrl = await fileToDataUrl(selectedProofFile);
   }
   await setStatus(pendingGoal, pendingStatus, proofDataUrl);
   proofModal.classList.add("hidden");
@@ -571,6 +583,18 @@ async function initAuth() {
     document.getElementById("loginForm").classList.remove("hidden");
   }
 }
+
+document.getElementById("showLogin").onclick = (e) => {
+  e.preventDefault();
+  document.getElementById("setupForm").classList.add("hidden");
+  document.getElementById("loginForm").classList.remove("hidden");
+};
+
+document.getElementById("showSetup").onclick = (e) => {
+  e.preventDefault();
+  document.getElementById("loginForm").classList.add("hidden");
+  document.getElementById("setupForm").classList.remove("hidden");
+};
 
 document.getElementById("setupBtn").onclick = async () => {
   const user = document.getElementById("setupUser").value.trim();
