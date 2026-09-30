@@ -72,21 +72,13 @@
 
         <section class="card">
           <div class="card-head">
-            <h2 id="goalsHeading">today's goals</h2>
-            <button id="addGoalBtn" class="btn primary small">+ extra</button>
+            <button id="dayPrev" class="btn secondary small" aria-label="previous day">&lt;</button>
+            <h2 id="goalsHeading" style="flex:1; text-align:center;">today's goals</h2>
+            <button id="dayNext" class="btn secondary small" aria-label="next day">&gt;</button>
           </div>
           <div id="goalList" class="goal-list"></div>
           <p id="emptyState" class="empty">nothing pre-planned for today.</p>
-        </section>
-
-        <section class="card">
-          <div class="card-head">
-            <button id="peekPrev" class="btn secondary small" aria-label="previous day">&lt;</button>
-            <h2 id="peekHeading" style="flex:1; text-align:center;">tomorrow</h2>
-            <button id="peekNext" class="btn secondary small" aria-label="next day">&gt;</button>
-          </div>
-          <div id="peekList" class="goal-list"></div>
-          <p id="peekEmpty" class="empty hidden">nothing planned for this day.</p>
+          <button id="addGoalBtn" class="btn primary small full" style="margin-top:10px;">+ extra</button>
         </section>
 
         <section class="card">
@@ -143,7 +135,13 @@
   <div id="proofModal" class="modal hidden">
     <div class="modal-box">
       <h3 id="proofTitle">mark as done</h3>
-      <input id="proofFile" type="file" accept="image/*" capture="environment" />
+      <div class="modal-actions" style="justify-content:center; gap:10px; margin-bottom:10px;">
+        <button id="proofCameraBtn" type="button" class="btn secondary">📷 take photo</button>
+        <button id="proofGalleryBtn" type="button" class="btn secondary">🖼️ from gallery</button>
+      </div>
+      <input id="proofFileCamera" type="file" accept="image/*" capture="environment" class="hidden" />
+      <input id="proofFileGallery" type="file" accept="image/*" class="hidden" />
+      <p id="proofFileName" class="hint" style="text-align:center;"></p>
       <p class="hint">or skip proof and just confirm honestly.</p>
       <div class="modal-actions">
         <button id="cancelProof" class="btn secondary">cancel</button>
