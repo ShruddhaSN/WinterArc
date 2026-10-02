@@ -187,6 +187,17 @@ const ROUTINE_LIBRARY = {
       { phase: "record & reflect", detail: "3 min — record yourself talking about any random topic, then play it back once", icon: "talk" },
     ],
   },
+  selfdefense: {
+    title: "Fighting & Self-Defense Fundamentals",
+    duration: "20-25 min",
+    blocks: [
+      { phase: "stage 1 (weeks 1-4) — boxing basics", detail: "YouTube: ExpertBoxing (Johnny N) or Tyler Bell Boxing — stance, jab-cross, footwork. Real striking fundamentals, not choreography." },
+      { phase: "stage 2 (weeks 5-8) — self-defense techniques", detail: "YouTube: Krav Maga Global's beginner playlist — grabs, chokes, wrist releases, getting free and creating distance." },
+      { phase: "stage 3 (weeks 9+) — combine & drill", detail: "Mix stance/strikes from stage 1 with the releases from stage 2. Shadow-practice combinations like you'd actually need them." },
+      { phase: "structured app option", detail: "Hero Krav Maga (free) — use instead of picking videos yourself if you'd rather follow a set lesson order." },
+    ],
+    note: "This is a real multi-month skill, not a weekly checkbox — move to the next stage whenever stage 1 starts feeling automatic, not on a fixed date.",
+  },
 };
 
 function renderRoutine(routine) {
@@ -725,11 +736,16 @@ function generateGoalsForDate(dayIndex, weekday) {
     goals.push({ text: "articulation practice (10 min)", needsProof: false, routineKey: "articulation" });
     goals.push({ text: sideQuestForDay(dayIndex), needsProof: false });
   } else if (weekday === 6) {
-    // Saturday — run, protein, articulation, side quest
+    // Saturday — run, protein, articulation, + alternating self-defense/side-quest (keeps it at 4 items)
     goals.push({ text: "run (build pace gradually)", needsProof: true, routineKey: "run" });
     goals.push({ text: "protein ~80g today", needsProof: false });
     goals.push({ text: "articulation practice (10 min)", needsProof: false, routineKey: "articulation" });
-    goals.push({ text: sideQuestForDay(dayIndex), needsProof: false });
+    const weekNum = Math.floor(dayIndex / 7);
+    if (weekNum % 2 === 0) {
+      goals.push({ text: "self-defense practice", needsProof: false, routineKey: "selfdefense" });
+    } else {
+      goals.push({ text: sideQuestForDay(dayIndex), needsProof: false });
+    }
   } else {
     // Sunday — prep day, kept lighter on purpose (no articulation/side-quest)
     goals.push({ text: "prep day: iron clothes + plan the week's outfits", needsProof: false });
@@ -860,6 +876,130 @@ function renderMilestones() {
   });
 }
 
+// ---------- Water tracker ----------
+function waterKey(date) { return `wa_water_${date}`; }
+
+function renderWater() {
+  const count = Number(localStorage.getItem(waterKey(todayStr())) || 0);
+  document.getElementById("waterCount").textContent = count;
+}
+document.getElementById("waterPlus").onclick = () => {
+  const k = waterKey(todayStr());
+  localStorage.setItem(k, String(Number(localStorage.getItem(k) || 0) + 1));
+  renderWater();
+};
+document.getElementById("waterMinus").onclick = () => {
+  const k = waterKey(todayStr());
+  localStorage.setItem(k, String(Math.max(0, Number(localStorage.getItem(k) || 0) - 1)));
+  renderWater();
+};
+
+// ---------- Weekly weight log ----------
+function getWeightLog() { return JSON.parse(localStorage.getItem("wa_weight_log") || "[]"); }
+
+function renderWeightHistory() {
+  const log = getWeightLog().slice(-5).reverse();
+  document.getElementById("weightHistory").innerHTML = log.length
+    ? log.map((e) => `${e.date}: ${e.weight}`).join("<br>")
+    : "no entries yet";
+}
+document.getElementById("logWeightBtn").onclick = () => {
+  const val = parseFloat(document.getElementById("weightInput").value);
+  if (!val) return;
+  const log = getWeightLog();
+  log.push({ date: todayStr(), weight: val });
+  localStorage.setItem("wa_weight_log", JSON.stringify(log));
+  document.getElementById("weightInput").value = "";
+  renderWeightHistory();
+};
+
+// ---------- Daily reflection (tap chips, no writing required) ----------
+const REFLECT_CHIPS = ["hit protein", "good sleep", "great workout", "low energy", "busy day", "proud moment", "skipped stuff", "stressed", "doomscrolled", "drank enough water"];
+let activeChips = [];
+
+function reflectKey(date) { return `wa_reflect_${date}`; }
+function getReflection(date) {
+  const raw = localStorage.getItem(reflectKey(date));
+  return raw ? JSON.parse(raw) : { chips: [], note: "" };
+}
+
+function renderReflectChips() {
+  const today = getReflection(todayStr());
+  activeChips = today.chips;
+  document.getElementById("reflectNote").value = today.note || "";
+  const wrap = document.getElementById("reflectChips");
+  wrap.innerHTML = "";
+  REFLECT_CHIPS.forEach((c) => {
+    const btn = document.createElement("button");
+    btn.className = "chip" + (activeChips.includes(c) ? " active" : "");
+    btn.textContent = c;
+    btn.onclick = () => {
+      activeChips = activeChips.includes(c) ? activeChips.filter((x) => x !== c) : [...activeChips, c];
+      renderReflectChips();
+    };
+    wrap.appendChild(btn);
+  });
+}
+document.getElementById("saveReflectBtn").onclick = () => {
+  const note = document.getElementById("reflectNote").value.trim();
+  localStorage.setItem(reflectKey(todayStr()), JSON.stringify({ chips: activeChips, note }));
+  renderSummaries();
+};
+
+function summarizeRange(days) {
+  const tally = {};
+  const notes = [];
+  for (let i = 0; i < days; i++) {
+    const d = shiftDateStr(todayStr(), -i);
+    const r = getReflection(d);
+    r.chips.forEach((c) => { tally[c] = (tally[c] || 0) + 1; });
+    if (r.note) notes.push(`${d}: ${r.note}`);
+  }
+  const tallyLine = Object.keys(tally).length
+    ? Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c} (${n}x)`).join(", ")
+    : "nothing logged yet";
+  return notes.length ? `${tallyLine}<br>${notes.join("<br>")}` : tallyLine;
+}
+function renderSummaries() {
+  document.getElementById("weekSummary").innerHTML = "<strong>this week:</strong> " + summarizeRange(7);
+  document.getElementById("monthSummary").innerHTML = "<strong>this month:</strong> " + summarizeRange(30);
+}
+
+// ---------- Bonus task list (your own, not date-bound) ----------
+function getBonusTasks() { return JSON.parse(localStorage.getItem("wa_bonus_tasks") || "[]"); }
+function saveBonusTasks(list) { localStorage.setItem("wa_bonus_tasks", JSON.stringify(list)); }
+
+function renderBonusTasks() {
+  const list = getBonusTasks();
+  const wrap = document.getElementById("bonusTaskList");
+  wrap.innerHTML = "";
+  list.forEach((t) => {
+    const div = document.createElement("div");
+    div.className = "bonus-task" + (t.done ? " done" : "");
+    div.innerHTML = `<span>${t.text}</span>`;
+    div.querySelector("span").onclick = () => {
+      t.done = !t.done;
+      saveBonusTasks(list);
+      renderBonusTasks();
+    };
+    div.appendChild(makeIconBtn("✕", "icon-btn skip-btn", "delete", () => {
+      saveBonusTasks(list.filter((x) => x.id !== t.id));
+      renderBonusTasks();
+    }));
+    wrap.appendChild(div);
+  });
+}
+document.getElementById("addBonusTaskBtn").onclick = () => {
+  const input = document.getElementById("bonusTaskInput");
+  const text = input.value.trim();
+  if (!text) return;
+  const list = getBonusTasks();
+  list.push({ id: Date.now(), text, done: false });
+  saveBonusTasks(list);
+  input.value = "";
+  renderBonusTasks();
+};
+
 // ---------- Init ----------
 function rawDayNumber() {
   const creds = getCreds();
@@ -893,6 +1033,11 @@ render = async function () {
   updateDayline();
   renderMilestones();
   updateSpinUI();
+  renderWater();
+  renderWeightHistory();
+  renderReflectChips();
+  renderSummaries();
+  renderBonusTasks();
 };
 
 openDB().then(async () => {
