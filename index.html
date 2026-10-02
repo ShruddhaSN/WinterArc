@@ -87,9 +87,45 @@
           </div>
           <div id="historyList" class="history-list"></div>
         </section>
+
+        <section class="card">
+          <div class="card-head"><h2>your extra tasks</h2></div>
+          <p class="hint" style="margin-bottom:10px;">your own list — dip in whenever you've got spare time.</p>
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+            <input id="bonusTaskInput" type="text" placeholder="add something..." style="flex:1; padding:9px 10px; border-radius:3px; border:1px solid var(--frost-dim);" />
+            <button id="addBonusTaskBtn" class="btn primary small">add</button>
+          </div>
+          <div id="bonusTaskList" class="goal-list"></div>
+        </section>
       </div>
 
       <div class="col-side">
+        <section class="card">
+          <div class="card-head"><h2>check-in</h2></div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+            <span>water today</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button id="waterMinus" class="icon-btn" aria-label="less water">–</button>
+              <span id="waterCount" style="font-family:'Fraunces',serif; font-size:18px; min-width:20px; text-align:center;">0</span>
+              <button id="waterPlus" class="icon-btn" aria-label="more water">+</button>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <input id="weightInput" type="number" step="0.1" placeholder="weight this week" style="flex:1; padding:9px 10px; border-radius:3px; border:1px solid var(--frost-dim);" />
+            <button id="logWeightBtn" class="btn primary small">log</button>
+          </div>
+          <div id="weightHistory" class="hint" style="margin-top:8px;"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>today's reflection</h2></div>
+          <div id="reflectChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
+          <input id="reflectNote" type="text" placeholder="anything extra? (optional)" style="width:100%; padding:9px 10px; border-radius:3px; border:1px solid var(--frost-dim); margin-bottom:8px;" />
+          <button id="saveReflectBtn" class="btn secondary small full">save today's reflection</button>
+          <div id="weekSummary" class="hint" style="margin-top:12px;"></div>
+          <div id="monthSummary" class="hint" style="margin-top:6px;"></div>
+        </section>
+
         <section class="card recap-card">
           <div class="card-head">
             <h2>end of arc</h2>
