@@ -173,6 +173,14 @@ main {
 .icon-btn.done-btn:hover, .icon-btn.done-btn.active { background: var(--moss-bg); border-color: var(--moss); color: var(--moss); }
 .icon-btn.postpone-btn:hover { background: #F5EBD6; border-color: var(--gold); color: var(--gold-dim); }
 .icon-btn.skip-btn:hover { background: var(--clay-bg); border-color: var(--clay); color: var(--clay); }
+.chip {
+  display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12.5px;
+  border: 1px solid var(--frost-dim); background: white; color: var(--text-dim); cursor: pointer;
+}
+.chip.active { background: var(--ink); color: var(--frost); border-color: var(--ink); }
+.bonus-task { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 3px; background: white; border-left: 3px solid var(--frost-dim); }
+.bonus-task.done { opacity: 0.55; text-decoration: line-through; }
+.bonus-task span { flex: 1; font-size: 14px; cursor: pointer; }
 .icon-btn.edit-btn { color: var(--gold-dim); }
 .icon-btn.edit-btn:hover { background: #F5EBD6; border-color: var(--gold); }
 
