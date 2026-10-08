@@ -167,6 +167,25 @@ const ROUTINE_LIBRARY = {
       { phase: "freestyle", detail: "Put on a playlist you love and just move — no set steps. Follow an online dance workout video instead if you want structure." },
     ],
   },
+  freeform: {
+    title: "Pick Your Fun",
+    duration: "15-20 min",
+    blocks: [
+      { phase: "choose one — whatever sounds good today", detail: "Dance to a playlist, follow a random YouTube workout that catches your eye, play a sport (badminton, cycling, anything), or jump rope to a couple songs. Only rule: move for 15-20 min." },
+    ],
+  },
+  rhythm: {
+    title: "Rhythm Circuit",
+    duration: "~15 min",
+    blocks: [
+      { phase: "3 songs — keep moving the whole time, switch it up each song", moves: [
+        { name: "Song 1: freestyle dance", time: "~4 min", icon: "talk" },
+        { name: "Song 2: jumping jacks + high knees, mixed in freely", time: "~4 min", icon: "jumpingJack" },
+        { name: "Song 3: your pick — shadow box, skip, or just dance it out", time: "~4 min", icon: "highKnees" },
+      ]},
+    ],
+    note: "Pick songs you actually like — the workout is just keeping moving to them.",
+  },
   run: {
     title: "Run",
     duration: "15-20 min",
@@ -182,7 +201,7 @@ const ROUTINE_LIBRARY = {
     title: "Articulation Practice",
     duration: "10 min",
     blocks: [
-      { phase: "warm-up", detail: "2 min — a few tongue twisters, exaggerate your mouth movements", icon: "talk" },
+      { phase: "warm-up", detail: "2 min — say each one slow 3x, then fast 3x, exaggerating mouth movements:<br>• She sells seashells by the seashore.<br>• Red lorry, yellow lorry.<br>• Peter Piper picked a peck of pickled peppers.<br>• Unique New York, unique New York.<br>• Toy boat, toy boat, toy boat.", icon: "talk" },
       { phase: "read aloud", detail: "5 min — read anything (book, article, subtitles) slowly and clearly, focus on enunciation", icon: "talk" },
       { phase: "record & reflect", detail: "3 min — record yourself talking about any random topic, then play it back once", icon: "talk" },
     ],
@@ -429,6 +448,10 @@ function openProofModal(goal, status) {
   document.getElementById("proofFileCamera").value = "";
   document.getElementById("proofFileGallery").value = "";
   document.getElementById("proofFileName").textContent = "";
+  const stepsInput = document.getElementById("proofSteps");
+  const isStepsGoal = status === "done" && /steps/i.test(goal.text);
+  stepsInput.classList.toggle("hidden", !isStepsGoal);
+  stepsInput.value = goal.steps || "";
   proofModal.classList.remove("hidden");
 }
 document.getElementById("cancelProof").onclick = () => proofModal.classList.add("hidden");
@@ -450,6 +473,10 @@ document.getElementById("confirmProof").onclick = async () => {
   let proofDataUrl = null;
   if (selectedProofFile) {
     proofDataUrl = await fileToDataUrl(selectedProofFile);
+  }
+  const stepsInput = document.getElementById("proofSteps");
+  if (!stepsInput.classList.contains("hidden") && stepsInput.value) {
+    pendingGoal.steps = Number(stepsInput.value);
   }
   await setStatus(pendingGoal, pendingStatus, proofDataUrl);
   proofModal.classList.add("hidden");
@@ -686,7 +713,7 @@ function walkTargetForDay(dayIndex) {
   return Math.min(20, 3 + stage * 2);
 }
 
-const WORKOUT_ROTATION = ["dance", "hiit", "mobility", "strength"];
+const WORKOUT_ROTATION = ["dance", "freeform", "rhythm", "hiit", "mobility", "strength"];
 
 const SIDE_QUESTS = [
   "clean the table",
@@ -882,6 +909,7 @@ function waterKey(date) { return `wa_water_${date}`; }
 function renderWater() {
   const count = Number(localStorage.getItem(waterKey(todayStr())) || 0);
   document.getElementById("waterCount").textContent = count;
+  document.getElementById("waterLiters").textContent = `≈ ${(count * 0.25).toFixed(2)} L`;
 }
 document.getElementById("waterPlus").onclick = () => {
   const k = waterKey(todayStr());
@@ -903,6 +931,72 @@ function renderWeightHistory() {
     ? log.map((e) => `${e.date}: ${e.weight}`).join("<br>")
     : "no entries yet";
 }
+
+// Monday-start week key (the Monday's date string) for grouping log entries by week
+function weekKeyOf(dateStr) {
+  const wd = weekdayOf(dateStr);
+  const diffToMonday = wd === 0 ? 6 : wd - 1;
+  return shiftDateStr(dateStr, -diffToMonday);
+}
+
+function renderWeeklyWeightSummary() {
+  const el = document.getElementById("weeklyWeightSummary");
+  if (!el) return;
+  const log = getWeightLog();
+  if (log.length === 0) { el.innerHTML = ""; return; }
+  const byWeek = {};
+  log.forEach((e) => { (byWeek[weekKeyOf(e.date)] = byWeek[weekKeyOf(e.date)] || []).push(e.weight); });
+  const weeks = Object.keys(byWeek).sort().reverse().slice(0, 4);
+  el.innerHTML = weeks.map((wk) => {
+    const vals = byWeek[wk];
+    const avg = (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+    return `week of ${wk}: avg ${avg} (${vals.length} log${vals.length > 1 ? "s" : ""})`;
+  }).join("<br>");
+}
+
+function renderWeightChart() {
+  const canvas = document.getElementById("weightChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const log = [...getWeightLog()].sort((a, b) => a.date.localeCompare(b.date));
+  const hint = document.getElementById("weightChartHint");
+  if (log.length < 2) {
+    hint.textContent = "log weight on 2+ days (any day, any time) to see your trend here.";
+    return;
+  }
+  hint.textContent = "";
+  const vals = log.map((e) => e.weight);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const padL = 4, padB = 18, padT = 10;
+  const stepX = (w - padL * 2) / (log.length - 1);
+  ctx.strokeStyle = "#B25B3E";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  log.forEach((e, i) => {
+    const x = padL + i * stepX;
+    const y = h - padB - ((e.weight - min) / range) * (h - padB - padT);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = "#4F7A5B";
+  log.forEach((e, i) => {
+    const x = padL + i * stepX;
+    const y = h - padB - ((e.weight - min) / range) * (h - padB - padT);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#8B93A8";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(log[0].date, padL, h - 4);
+  ctx.textAlign = "right";
+  ctx.fillText(log[log.length - 1].date, w, h - 4);
+}
+
 document.getElementById("logWeightBtn").onclick = () => {
   const val = parseFloat(document.getElementById("weightInput").value);
   if (!val) return;
@@ -911,6 +1005,8 @@ document.getElementById("logWeightBtn").onclick = () => {
   localStorage.setItem("wa_weight_log", JSON.stringify(log));
   document.getElementById("weightInput").value = "";
   renderWeightHistory();
+  renderWeeklyWeightSummary();
+  renderWeightChart();
 };
 
 // ---------- Daily reflection (tap chips, no writing required) ----------
@@ -935,7 +1031,7 @@ function renderReflectChips() {
     btn.textContent = c;
     btn.onclick = () => {
       activeChips = activeChips.includes(c) ? activeChips.filter((x) => x !== c) : [...activeChips, c];
-      renderReflectChips();
+      btn.classList.toggle("active");
     };
     wrap.appendChild(btn);
   });
@@ -1027,6 +1123,52 @@ function updateDayline() {
   }
 }
 
+// ---------- Steps progress chart (end of arc) ----------
+async function renderStepsChart() {
+  const canvas = document.getElementById("stepsChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const all = await getAllGoals();
+  const logged = all
+    .filter((g) => /steps/i.test(g.text) && typeof g.steps === "number")
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const hint = document.getElementById("stepsChartHint");
+  if (logged.length < 2) {
+    hint.textContent = "log your exact steps a few times (tick a walk goal done) to see the trend here.";
+    return;
+  }
+  hint.textContent = "";
+  const vals = logged.map((g) => g.steps);
+  const max = Math.max(...vals, 1);
+  const padL = 4, padB = 18, padT = 10;
+  const stepX = (w - padL * 2) / (logged.length - 1);
+  ctx.strokeStyle = "#D9A441";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  logged.forEach((g, i) => {
+    const x = padL + i * stepX;
+    const y = h - padB - (g.steps / max) * (h - padB - padT);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.fillStyle = "#4F7A5B";
+  logged.forEach((g, i) => {
+    const x = padL + i * stepX;
+    const y = h - padB - (g.steps / max) * (h - padB - padT);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#8B93A8";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(logged[0].date, padL, h - 4);
+  ctx.textAlign = "right";
+  ctx.fillText(logged[logged.length - 1].date, w, h - 4);
+}
+
 const originalRender = render;
 render = async function () {
   await originalRender();
@@ -1035,9 +1177,12 @@ render = async function () {
   updateSpinUI();
   renderWater();
   renderWeightHistory();
+  renderWeeklyWeightSummary();
+  renderWeightChart();
   renderReflectChips();
   renderSummaries();
   renderBonusTasks();
+  renderStepsChart();
 };
 
 openDB().then(async () => {
